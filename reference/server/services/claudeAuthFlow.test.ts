@@ -270,6 +270,14 @@ describe('claudeAuthFlow', () => {
   });
 
   it('fails completion when no login process is active', async () => {
+    vi.mocked(getClaudeAuthStatus).mockResolvedValueOnce({
+      authenticated: false,
+      status: 'missing',
+    } as Awaited<ReturnType<typeof getClaudeAuthStatus>>);
     await expect(completeClaudeAuthLogin(42, 'session', 'code')).rejects.toBeInstanceOf(ClaudeAuthLoginError);
+  });
+
+  it('reports success when no login process is active but the browser flow already saved a token', async () => {
+    await expect(completeClaudeAuthLogin(42, 'session', 'code')).resolves.toMatchObject({ authenticated: true });
   });
 });

@@ -249,7 +249,9 @@ export async function startClaudeAuthLogin(
 
   // node-pty allocates a real PTY so the Claude CLI (an Ink/React app that
   // requires raw-mode stdin) runs normally and emits a single-line OAuth URL.
-  const claudeCli = process.env.CLAUDE_CLI_PATH || 'claude';
+  // ConPTY does not apply PATHEXT, so on Windows the bare name isn't found.
+  const claudeCli =
+    process.env.CLAUDE_CLI_PATH || (process.platform === 'win32' ? 'claude.exe' : 'claude');
   const child = pty.spawn(claudeCli, ['setup-token'], {
     name: 'xterm-256color',
     cols: 1000,
@@ -357,6 +359,27 @@ export async function startClaudeAuthLogin(
       }
     }
 
+    // On Windows the CLI opens the browser itself (the open/xdg-open shims don't
+    // apply), and the localhost-callback flow can finish without the user ever
+    // pasting a code. Persist the token as soon as it appears so that flow works.
+    if (!session.completing && !session.tokenCaptured) {
+      const token = extractOAuthToken(`${session.stdout}\n${session.stderr}`);
+      if (token) {
+        session.tokenCaptured = token;
+        try {
+          writeClaudeOAuthToken(session.userId, token);
+          logSession(session, 'oauth-token-auto-captured', {
+            tokenFingerprint: token.slice(-6),
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          logSession(session, 'token-persist-failed', { error: message });
+        }
+        session.resolveToken(token);
+        return;
+      }
+    }
+
     if (session.completing && !session.tokenCaptured && !session.errorCaptured) {
       const combined = `${session.stdout}\n${session.stderr}`;
       const token = extractOAuthToken(combined);
@@ -442,6 +465,9 @@ export async function completeClaudeAuthLogin(
         submittedLoginSessionId: loginSessionId || null,
       }),
     );
+    // The browser-callback flow may already have finished and saved the token.
+    const status = await getClaudeAuthStatus(userId);
+    if (status.authenticated) return status;
     throw new ClaudeAuthLoginError('No active Claude authentication session', 404);
   }
 

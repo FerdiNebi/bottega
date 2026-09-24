@@ -167,7 +167,9 @@ function validateAuthFileSecurity(
     );
   }
 
-  if ((stats.mode & 0o077) !== 0) {
+  // POSIX mode bits are meaningless on Windows (stat always reports 0o666/0o777);
+  // there the user profile ACL is what restricts access.
+  if (process.platform !== 'win32' && (stats.mode & 0o077) !== 0) {
     throw new OpenCodeCredentialsError(
       `OpenCode auth.json for user ${userId} must not be accessible by group or other users; run chmod 600 ${authPath}`,
     );

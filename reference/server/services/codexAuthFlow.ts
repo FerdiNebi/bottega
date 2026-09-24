@@ -253,7 +253,9 @@ export async function startCodexAuthLogin(
   }
 
   const env = buildCodexSdkEnv(userId);
-  const codexCli = process.env['CODEX_CLI_PATH'] || 'codex';
+  // ConPTY does not apply PATHEXT, so on Windows the bare name isn't found.
+  const codexCli =
+    process.env['CODEX_CLI_PATH'] || (process.platform === 'win32' ? 'codex.exe' : 'codex');
 
   const child = pty.spawn(codexCli, ['login', '--device-auth'], {
     name: 'xterm-256color',

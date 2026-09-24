@@ -98,7 +98,9 @@ function validateTokenFileSecurity(
     );
   }
 
-  if ((stats.mode & 0o077) !== 0) {
+  // POSIX mode bits are meaningless on Windows (stat always reports 0o666/0o777);
+  // there the user profile ACL is what restricts access.
+  if (process.platform !== 'win32' && (stats.mode & 0o077) !== 0) {
     throw new ClaudeCredentialsError(
       `Claude OAuth token for user ${userId} must not be accessible by group or other users; run chmod 600 ${tokenPath}`,
     );
@@ -189,7 +191,9 @@ function validateClaudeConfigDirSecurity(
     );
   }
 
-  if ((dirStats.mode & 0o077) !== 0) {
+  // POSIX mode bits are meaningless on Windows (stat always reports 0o666/0o777);
+  // there the user profile ACL is what restricts access.
+  if (process.platform !== 'win32' && (dirStats.mode & 0o077) !== 0) {
     throw new ClaudeCredentialsError(
       `Claude config directory for user ${userId} must not be accessible by group or other users; run chmod 700 ${claudeConfigDir}`,
     );
@@ -285,7 +289,7 @@ export function buildClaudeLoginEnv(
     CLAUDE_CONFIG_DIR: claudeConfigDir,
     // Force wide terminal so the OAuth URL stays on one line and can be extracted.
     COLUMNS: '1000',
-    PATH: `${shimDir}:${process.env.PATH}`,
+    PATH: `${shimDir}${path.delimiter}${process.env.PATH}`,
   };
   removeInheritedClaudeAuthEnv(env);
   return env;
