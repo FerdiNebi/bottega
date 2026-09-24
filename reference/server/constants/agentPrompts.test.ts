@@ -9,7 +9,7 @@ import {
   generatePrAgentCommentMessage,
   generatePrAgentReviewMessage,
 } from './agentPrompts.js';
-import { saveOverride, deleteOverride } from '../services/promptRenderer.js';
+import { saveOverride, deleteOverride, toPromptPath } from '../services/promptRenderer.js';
 
 describe('generateYoloMessage', () => {
   const taskDocPath = '/repo/.bottega/tasks/task-42.md';
@@ -153,7 +153,7 @@ describe('generatePlanificationMessage — plan-template integration', () => {
 
   it('injects an @-reference to the override path once a template override is saved', async () => {
     saveOverride('plan-template', '# CUSTOM\n');
-    const expected = path.join(archiveRoot, 'templates', 'plan-template.md');
+    const expected = toPromptPath(path.join(archiveRoot, 'templates', 'plan-template.md'));
     const msg = await generatePlanificationMessage(taskDocPath, taskId);
     expect(msg).toContain(`@${expected}`);
     deleteOverride('plan-template');
