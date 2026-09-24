@@ -73,6 +73,11 @@ if (!process.env.DATABASE_PATH) {
 const db = new Database(DB_PATH);
 
 db.pragma('foreign_keys = ON');
+// WAL lets readers proceed during writes (the agent completion scripts open
+// this DB from a separate process) and, with synchronous=NORMAL, avoids an
+// fsync on every commit — sessionStore.append commits once per SDK message.
+db.pragma('journal_mode = WAL');
+db.pragma('synchronous = NORMAL');
 
 const appInstallPath = path.join(__dirname, '../..');
 console.log('');
