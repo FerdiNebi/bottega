@@ -430,6 +430,13 @@ tested on its own. Spec first, then pure logic, then I/O, then UI.
    merge on GitHub → create ARD → merge → create initial tasks; verify the level
    prefixes, the `## Depends on` sections, and that new task worktrees contain
    `PRD.md` and `ARD.md`.
+   *(Automated part done on a scratch repo with a local bare `origin` and a
+   stale local `main`: status reads `origin/<default>`, `create-tasks.ts`
+   creates level-prefixed tasks whose worktrees contain both docs with no
+   upstream set, a rerun is refused, and a forced mid-run failure rolls back
+   tasks, docs, worktrees, and branches. `worktree add` leaves its new branch
+   behind on failure, so `createWorktree` now deletes it unless it existed
+   before. The interview sessions and GitHub merges still need a human run.)*
 
 ## Reference map
 

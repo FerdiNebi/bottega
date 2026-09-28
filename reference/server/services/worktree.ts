@@ -126,6 +126,17 @@ export async function getBranchName(worktreePath: string): Promise<string | null
   }
 }
 
+async function localBranchExists(repoPath: string, branch: string): Promise<boolean> {
+  try {
+    await runCommand('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], {
+      cwd: repoPath,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function sanitizeTitle(title: string | null | undefined): string {
   return (title || 'task')
     .toLowerCase()
@@ -232,20 +243,30 @@ export async function createWorktree(
       ? assertValidBranchName(baseRef, 'base ref')
       : assertValidBranchName(await getDefaultBranch(repoPath), 'default branch');
 
-    await runCommand(
-      'git',
-      [
-        'worktree',
-        'add',
-        // A remote-tracking base would otherwise become the branch's upstream.
-        ...(baseRef ? ['--no-track'] : []),
-        '-b',
-        assertValidBranchName(branch),
-        worktreePath,
-        base,
-      ],
-      { cwd: repoPath },
-    );
+    const branchExisted = await localBranchExists(repoPath, assertValidBranchName(branch));
+    try {
+      await runCommand(
+        'git',
+        [
+          'worktree',
+          'add',
+          // A remote-tracking base would otherwise become the branch's upstream.
+          ...(baseRef ? ['--no-track'] : []),
+          '-b',
+          branch,
+          worktreePath,
+          base,
+        ],
+        { cwd: repoPath },
+      );
+    } catch (addError) {
+      // `worktree add -b` creates the branch before checking it out, so a
+      // failed checkout (e.g. the path already exists) leaves a stray branch.
+      if (!branchExisted) {
+        await runCommand('git', ['branch', '-D', branch], { cwd: repoPath }).catch(() => {});
+      }
+      throw addError;
+    }
 
     const projectPath = subprojectPath ? path.join(worktreePath, subprojectPath) : worktreePath;
 

@@ -239,6 +239,35 @@ describe('Worktree Service', () => {
       ).toBe(false);
     });
 
+    it('deletes the branch git created when worktree add fails', async () => {
+      withDispatch(async (_cmd, args) => {
+        if (args[0] === 'rev-parse' && args[1] === '--verify') throw new Error('no such branch');
+        if (args[0] === 'worktree') throw new Error('already exists');
+        return { stdout: '', stderr: '' };
+      });
+
+      const result = await createWorktree('/home/user/repo', 18, 'x', null, 'origin/main');
+
+      expect(result.success).toBe(false);
+      expect(mockRunCommand).toHaveBeenCalledWith('git', ['branch', '-D', 'task/18-x'], {
+        cwd: '/home/user/repo',
+      });
+    });
+
+    it('keeps a pre-existing branch when worktree add fails', async () => {
+      withDispatch(async (_cmd, args) => {
+        if (args[0] === 'worktree') throw new Error('branch already exists');
+        return { stdout: '', stderr: '' };
+      });
+
+      const result = await createWorktree('/home/user/repo', 19, 'x', null, 'origin/main');
+
+      expect(result.success).toBe(false);
+      expect(
+        mockRunCommand.mock.calls.some((c) => (c[1] as string[]).includes('-D')),
+      ).toBe(false);
+    });
+
     it('rejects a flag-looking base ref', async () => {
       withDispatch(async () => ({ stdout: '', stderr: '' }));
 
