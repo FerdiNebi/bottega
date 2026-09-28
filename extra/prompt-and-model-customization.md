@@ -79,8 +79,15 @@ validation is skipped — see the guard in `findUnknownVariables`.
 The variable set per prompt is small and stable: most carry `taskDocPath` and
 `taskId`; planning adds `planTemplatePath`; the PR/YOLO prompts add
 `prContextLine` and `prCreateOrVerifyBlock`; the feedback prompt adds `prUrl`
-and `feedbackSection`. The exact lists are the `variables` arrays in the
-registry.
+and `feedbackSection`. Every prompt also receives `scriptsDir` — the absolute
+path of the completion scripts — so no prompt hardcodes a deployment path. The
+exact lists are the `variables` arrays in the registry.
+
+The [project bootstrap](./project-bootstrap.md) extra registers three more
+overridable prompts — `prd`, `ard`, and `task-breakdown` — for its interactive
+sessions. They go through the same registry, override lookup, and variable
+validation; the one difference is that they are delivered as the **first message
+of a manual chat** rather than an agent run's turn prompt.
 
 ### How `agentPrompts.ts` composes a per-agent message
 

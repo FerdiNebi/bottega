@@ -141,6 +141,13 @@ The reference Board also has an **Ask Question** shortcut that creates a
 throwaway task + a conversation in one step and jumps straight to Chat — handy,
 but it is the same two primitives (create task, create conversation) composed.
 
+If the [project bootstrap](./project-bootstrap.md) extra is installed, the Board
+header also carries its **Create/Refine PRD**, **Create/Refine ARD**, and
+**Create initial tasks** buttons. They are the same composition again (task +
+conversation, with a rendered prompt as the first message), and the tasks that
+session creates arrive through a script rather than this form — a second front
+door onto the same create-task side effects.
+
 ## The AgentSection "Run" buttons → the orchestration loop
 
 On Task Detail, the **AgentSection** lists the agent roles (Planification,
