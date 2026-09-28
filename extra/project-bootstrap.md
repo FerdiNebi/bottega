@@ -360,6 +360,58 @@ no default model.
 - [ ] Board buttons (create/refine labels, gated tasks button) and a single
       bootstrap modal that opens the chat on success.
 
+## Build order and tests (reference implementation)
+
+The order the reference implementation is built in, each step shippable and
+tested on its own. Spec first, then pure logic, then I/O, then UI.
+
+1. **Spec** — this file, plus the index and related extras. *(Done.)*
+2. **Pure logic + script.**
+   - `server/services/taskBreakdown.ts`: `validateTaskList(input)` (schema,
+     unique keys, known `dependsOn`, cycle detection, non-empty title/spec) and
+     `computeLevels(tasks)` / `topologicalOrder(tasks)`.
+   - `scripts/create-tasks.ts`: argument parsing, loads the session task,
+     validates, creates in topological order with `"<level>. "` titles and
+     `## Depends on` docs, rollback on failure, marks the session task
+     completed.
+   - Tests: levels for a chain, a diamond (level = 1 + max), multiple roots, a
+     task with deps at two different levels; errors for a cycle, a
+     self-dependency, an unknown key, duplicate keys, empty title/spec; script
+     creates rows + docs with correct titles and `Depends on` ids; rollback
+     deletes created tasks when a later creation fails (use the in-memory
+     `db-helper`, mock `createWorktree`).
+3. **Server.**
+   - `createWorktree(..., baseRef?)` — optional base ref, default behavior
+     unchanged.
+   - `server/services/projectBootstrap.ts`: `getBootstrapStatus(repoPath)`
+     (fetch, `cat-file -e origin/<default>:PRD.md`, stale fallback) and
+     `startBootstrapSession(kind, …)` (prerequisites, mode, task + worktree from
+     `origin/<default>`, rendered first message, `startConversation`).
+   - Routes `GET /api/projects/:id/bootstrap` and
+     `POST /api/projects/:id/bootstrap/:kind`; zod schemas in
+     `shared/schemas/projects.ts`; typed contracts in `shared/api/projects.ts`.
+   - Tests: status on-main / missing / fetch-failure (mocked git); create vs
+     refine mode selection; 409 for `tasks` without both docs; worktree created
+     from `origin/<default>`; route validation, non-member 404, response shape;
+     `createWorktree` default unchanged when no base ref is passed.
+4. **Prompts.** `prd.md`, `ard.md`, `task-breakdown.md` under
+   `server/constants/prompts/`, registered in `PROMPT_DEFINITIONS` with their
+   variable allowlists (at least `mode`, `input`, `taskId`, `scriptsDir`).
+   Tests: each renders with exactly its declared variables; each contains the
+   non-negotiables (confirmation before writing, `CLAUDE.md` section with links,
+   no commit/push, plain-text fallback, the `create-tasks.ts` invocation for
+   `task-breakdown`).
+5. **Frontend.** `api.projects.getBootstrap` / `startBootstrap` in
+   `src/utils/api.ts`; `BootstrapSessionModal.tsx`; the Board header button
+   group in `BoardView.tsx`.
+   Tests: modal fields and required/optional rules per kind; error display for
+   409/403; Board labels in create vs refine mode; "Create initial tasks"
+   disabled until both docs are on main; navigation to the chat on success.
+6. **Manual end-to-end** on a real repo: refine an existing PRD → Create PR →
+   merge on GitHub → create ARD → merge → create initial tasks; verify the level
+   prefixes, the `## Depends on` sections, and that new task worktrees contain
+   `PRD.md` and `ARD.md`.
+
 ## Reference map
 
 | Concern | File |
