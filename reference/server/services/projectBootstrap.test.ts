@@ -168,7 +168,7 @@ describe('startBootstrapSession', () => {
 
     const result = await startBootstrapSession({ ...baseParams, kind: 'prd', input: 'Meal ordering' });
 
-    expect(result).toEqual({ taskId: 42, conversationId: 99 });
+    expect(result).toEqual({ taskId: 42, conversationId: 99, initialMessage: 'rendered:prd' });
     expect(tasksDb.create).toHaveBeenCalledWith(3, 'Create PRD', false, 7);
     expect(createWorktree).toHaveBeenCalledWith('/repo', 42, 'Create PRD', null, 'origin/main');
     expect(writeTaskDoc).toHaveBeenCalledWith(3, 42, expect.stringContaining('## Initial idea\n\nMeal ordering'));

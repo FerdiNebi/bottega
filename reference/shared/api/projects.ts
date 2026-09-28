@@ -172,4 +172,6 @@ export interface StartBootstrapRequest {
 export interface StartBootstrapResponse {
   taskId: number;
   conversationId: number;
+  /** The rendered prompt sent as the first user message (shown while streaming). */
+  initialMessage: string;
 }

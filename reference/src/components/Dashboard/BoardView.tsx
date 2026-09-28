@@ -24,6 +24,9 @@ import {
   X,
   Loader2,
   MessageCircleQuestion,
+  FileText,
+  ListChecks,
+  RefreshCw,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
@@ -34,9 +37,14 @@ import { useTasksLiveSubscriptions } from '../../hooks/useTasksLiveSubscriptions
 import BoardColumn from './BoardColumn';
 import TaskForm from '../TaskForm';
 import AskQuestionModal, { type AskQuestionPayload } from '../AskQuestionModal';
+import BootstrapSessionModal, { type BootstrapSessionPayload } from '../BootstrapSessionModal';
 import type { ProjectRow, TaskRow, TaskStatus } from '../../../shared/types/db';
 import type { CreateTaskRequest } from '../../../shared/api/tasks';
-import type { WebServerStatusSuccess } from '../../../shared/api/projects';
+import type {
+  BootstrapKind,
+  BootstrapStatusResponse,
+  WebServerStatusSuccess,
+} from '../../../shared/api/projects';
 
 interface CreateTaskFormPayload {
   title: string;
@@ -58,10 +66,11 @@ type TasksByStatus = Record<TaskStatus, TaskRow[]>;
 
 function BoardView({ className, project }: BoardViewProps) {
   const navigate = useNavigate();
-  const { requireClaudeAuth } = useClaudeAuth();
+  const { requireClaudeAuth, openAuthModal } = useClaudeAuth();
   const {
     tasks,
     isLoadingTasks,
+    loadTasks,
     createTask,
     deleteTask,
     isTaskLive,
@@ -74,6 +83,12 @@ function BoardView({ className, project }: BoardViewProps) {
   // Ask Question modal state
   const [showAskQuestion, setShowAskQuestion] = useState(false);
   const [isAsking, setIsAsking] = useState(false);
+
+  // Project bootstrap (PRD / ARD / initial tasks) state
+  const [bootstrapStatus, setBootstrapStatus] = useState<BootstrapStatusResponse | null>(null);
+  const [isCheckingBootstrap, setIsCheckingBootstrap] = useState(false);
+  const [bootstrapKind, setBootstrapKind] = useState<BootstrapKind | null>(null);
+  const [isStartingBootstrap, setIsStartingBootstrap] = useState(false);
 
   // Subscribe to task-channel events for every task currently displayed on
   // the board so the per-card Live indicator keeps updating between REST
@@ -137,6 +152,28 @@ function BoardView({ className, project }: BoardViewProps) {
     };
     void loadWebServerStatus();
   }, [project]);
+
+  // Load project bootstrap status (the server fetches origin/<default> first)
+  const loadBootstrapStatus = useCallback(async () => {
+    if (!project) {
+      setBootstrapStatus(null);
+      return;
+    }
+    setIsCheckingBootstrap(true);
+    try {
+      const response = await api.projects.getBootstrap(project.id);
+      setBootstrapStatus(response.ok ? await response.json() : null);
+    } catch (error) {
+      console.error('Error loading bootstrap status:', error);
+      setBootstrapStatus(null);
+    } finally {
+      setIsCheckingBootstrap(false);
+    }
+  }, [project]);
+
+  useEffect(() => {
+    void loadBootstrapStatus();
+  }, [loadBootstrapStatus]);
 
   // Group tasks by status
   const tasksByStatus = useMemo<TasksByStatus>(() => {
@@ -334,6 +371,65 @@ function BoardView({ className, project }: BoardViewProps) {
     [project, requireClaudeAuth, createTask, navigate]
   );
 
+  // Handle a project-bootstrap session: the server creates task + worktree +
+  // conversation in one call; reload tasks so the chat page can find the new
+  // task, then open the chat.
+  const handleStartBootstrap = useCallback(
+    async ({ input, provider, model }: BootstrapSessionPayload): Promise<ActionResult> => {
+      if (!project || !bootstrapKind) return { success: false, error: 'No project selected' };
+      if (provider === 'anthropic' && !requireClaudeAuth())
+        return { success: false, error: 'Claude authentication required' };
+
+      setIsStartingBootstrap(true);
+      try {
+        const response = await api.projects.startBootstrap(project.id, bootstrapKind, {
+          input: input || undefined,
+          provider,
+          model,
+        });
+        if (!response.ok) {
+          const data = (await response.json().catch(() => ({}))) as {
+            error?: string;
+            code?: string;
+          };
+          if (response.status === 403 && data.code === 'PROVIDER_CREDENTIALS_MISSING') {
+            openAuthModal();
+          }
+          if (response.status === 409) {
+            void loadBootstrapStatus();
+          }
+          return { success: false, error: data.error || 'Failed to start session' };
+        }
+        const { taskId, conversationId, initialMessage } = await response.json();
+
+        await loadTasks(project.id);
+        setBootstrapKind(null);
+        navigate(`/projects/${project.id}/tasks/${taskId}/chat/${conversationId}`, {
+          state: { initialMessage },
+        });
+        return { success: true };
+      } catch (err) {
+        console.error('Error starting bootstrap session:', err);
+        return { success: false, error: err instanceof Error ? err.message : String(err) };
+      } finally {
+        setIsStartingBootstrap(false);
+      }
+    },
+    [project, bootstrapKind, requireClaudeAuth, openAuthModal, loadBootstrapStatus, loadTasks, navigate]
+  );
+
+  const prdMode = bootstrapStatus?.prd.onMain ? 'refine' : 'create';
+  const ardMode = bootstrapStatus?.ard.onMain ? 'refine' : 'create';
+  const missingDocs = [
+    !bootstrapStatus?.prd.onMain && 'PRD.md',
+    !bootstrapStatus?.ard.onMain && 'ARD.md',
+  ].filter(Boolean);
+  const canCreateInitialTasks = !!bootstrapStatus && missingDocs.length === 0;
+  const defaultBranch = bootstrapStatus?.defaultBranch || 'the default branch';
+  const initialTasksTooltip = canCreateInitialTasks
+    ? 'Break the PRD and ARD down into dependency-ordered tasks'
+    : `Merge ${missingDocs.join(' and ')} into ${defaultBranch} first`;
+
   // Handle back navigation
   const handleBack = useCallback(() => {
     navigate(`/`);
@@ -434,10 +530,68 @@ function BoardView({ className, project }: BoardViewProps) {
           </div>
         </div>
 
-        {/* Project path */}
-        <p className="text-xs text-muted-foreground truncate mt-3">
-          {project.repo_folder_path}
-        </p>
+        {/* Project path + Project docs (bootstrap) group */}
+        <div className="flex flex-wrap items-center justify-between gap-2 mt-3">
+          <p className="text-xs text-muted-foreground truncate min-w-0">
+            {project.repo_folder_path}
+          </p>
+          {bootstrapStatus?.isGitRepository && (
+            <div
+              className="flex flex-wrap items-center gap-1.5"
+              role="group"
+              aria-label="Project docs"
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setBootstrapKind('prd')}
+                className="h-7 text-xs"
+                title="Interview-driven Product Requirements Document (PRD.md)"
+              >
+                <FileText className="w-3.5 h-3.5 mr-1" />
+                {prdMode === 'refine' ? 'Refine PRD' : 'Create PRD'}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setBootstrapKind('ard')}
+                className="h-7 text-xs"
+                title="Architecture Requirements Document (ARD.md)"
+              >
+                <FileText className="w-3.5 h-3.5 mr-1" />
+                {ardMode === 'refine' ? 'Refine ARD' : 'Create ARD'}
+              </Button>
+              {/* Wrapper keeps the tooltip working while the button is disabled */}
+              <span title={initialTasksTooltip}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBootstrapKind('tasks')}
+                  className="h-7 text-xs"
+                  disabled={!canCreateInitialTasks}
+                >
+                  <ListChecks className="w-3.5 h-3.5 mr-1" />
+                  Create initial tasks
+                </Button>
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void loadBootstrapStatus()}
+                disabled={isCheckingBootstrap}
+                className="h-7 w-7 p-0"
+                title={
+                  bootstrapStatus.stale
+                    ? `Could not fetch origin — showing local ${defaultBranch}. Re-check`
+                    : `Re-check ${defaultBranch}`
+                }
+                aria-label="Re-check project docs"
+              >
+                <RefreshCw className={cn('w-3.5 h-3.5', isCheckingBootstrap && 'animate-spin')} />
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Board columns */}
@@ -523,6 +677,17 @@ function BoardView({ className, project }: BoardViewProps) {
         onSubmit={handleAskQuestion}
         projectName={project?.name}
         isSubmitting={isAsking}
+      />
+
+      {/* Project bootstrap Modal */}
+      <BootstrapSessionModal
+        isOpen={bootstrapKind !== null}
+        kind={bootstrapKind ?? 'prd'}
+        mode={bootstrapKind === 'prd' ? prdMode : bootstrapKind === 'ard' ? ardMode : 'create'}
+        onClose={() => setBootstrapKind(null)}
+        onSubmit={handleStartBootstrap}
+        projectName={project?.name}
+        isSubmitting={isStartingBootstrap}
       />
     </div>
   );

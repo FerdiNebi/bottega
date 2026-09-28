@@ -45,7 +45,7 @@ conversation, open the chat):
 3. **Start a conversation** whose **first user message is a rendered prompt
    template** (`prd`, `ard`, or `task-breakdown`), with the usual task context as
    the system prompt.
-4. **Return `{ taskId, conversationId }`** and open the chat.
+4. **Return `{ taskId, conversationId, initialMessage }`** and open the chat.
 
 From there it is an ordinary manual chat: the human answers questions, asks for
 edits by typing, and — for sessions 1 and 2 — opens the PR from Task Detail's
@@ -304,7 +304,7 @@ the same on every harness.
 | Method | Route | Purpose |
 |---|---|---|
 | `GET` | `/api/projects/:id/bootstrap` | Status: `{ defaultBranch, isGitRepository, prd: { onMain }, ard: { onMain }, stale }` (fetches first; `defaultBranch` is `null` for a non-git folder). |
-| `POST` | `/api/projects/:id/bootstrap/:kind` | Start a session. `kind ∈ {prd, ard, tasks}`; body `{ input?, provider, model }`. Returns `201 { taskId, conversationId }`. |
+| `POST` | `/api/projects/:id/bootstrap/:kind` | Start a session. `kind ∈ {prd, ard, tasks}`; body `{ input?, provider, model }`. Returns `201 { taskId, conversationId, initialMessage }` (the rendered first message, shown while the reply streams). |
 
 Both are project-membership checked like every project route. `POST` returns
 **409** when a prerequisite is missing (tasks without PRD+ARD on main, or a
@@ -317,17 +317,20 @@ no default model.
 
 ## UI
 
-- The Board header gains a **Project docs** group next to **Ask Question**:
-  **Create PRD** / **Refine PRD**, **Create ARD** / **Refine ARD**, and **Create
-  initial tasks** (disabled with an explanatory tooltip until both documents are
-  on the default branch). Labels and the disabled state come from the status
-  endpoint.
+- The Board header gains a **Project docs** group (on the project-path row,
+  under **Ask Question**): **Create PRD** / **Refine PRD**, **Create ARD** /
+  **Refine ARD**, and **Create initial tasks** (disabled with an explanatory
+  tooltip until both documents are on the default branch), plus a re-check
+  button whose tooltip says when the status is stale. Labels and the disabled
+  state come from the status endpoint; the group is hidden for a non-git project.
 - One modal serves all three, modeled on the Ask Question modal (provider/model
   picker, voice input). Its single textarea depends on the kind: *Describe your
   idea* (PRD, create — required), *What should change?* (refine — optional),
   *Constraints or preferences* (ARD — optional), *Guidance, e.g. "MVP only"*
   (tasks — optional).
-- On success the modal navigates straight to the new chat. Answers go through the
+- On success the board reloads its tasks (so the chat page can resolve the new
+  task) and navigates straight to the new chat, passing the rendered first
+  message as the chat's initial message. Answers go through the
   existing structured-question panel; edits through the normal chat input; the PR
   through Task Detail's **Create PR**.
 - After task creation the board shows the new tasks on its next load (the script
@@ -422,6 +425,7 @@ tested on its own. Spec first, then pure logic, then I/O, then UI.
    Tests: modal fields and required/optional rules per kind; error display for
    409/403; Board labels in create vs refine mode; "Create initial tasks"
    disabled until both docs are on main; navigation to the chat on success.
+   *(Done.)*
 6. **Manual end-to-end** on a real repo: refine an existing PRD → Create PR →
    merge on GitHub → create ARD → merge → create initial tasks; verify the level
    prefixes, the `## Depends on` sections, and that new task worktrees contain

@@ -349,14 +349,14 @@ describe('Projects Routes - Phase 3', () => {
 
     it('starts a session and returns the ids', async () => {
       vi.mocked(getProject).mockReturnValue(project as never);
-      vi.mocked(startBootstrapSession).mockResolvedValue({ taskId: 5, conversationId: 9 });
+      vi.mocked(startBootstrapSession).mockResolvedValue({ taskId: 5, conversationId: 9, initialMessage: 'hi' });
 
       const response = await request(app)
         .post('/api/projects/1/bootstrap/prd')
         .send({ input: 'A meal ordering app', provider: 'anthropic', model: 'opus' });
 
       expect(response.status).toBe(201);
-      expect(response.body).toEqual({ taskId: 5, conversationId: 9 });
+      expect(response.body).toEqual({ taskId: 5, conversationId: 9, initialMessage: 'hi' });
       expect(startBootstrapSession).toHaveBeenCalledWith(
         expect.objectContaining({
           kind: 'prd',

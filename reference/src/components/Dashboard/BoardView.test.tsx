@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import BoardView from './BoardView';
 import { useTaskContext, type TaskContextValue } from '../../contexts/TaskContext';
 import { api } from '../../utils/api';
@@ -32,6 +32,8 @@ vi.mock('../../utils/api', () => ({
     },
     projects: {
       getWebServer: vi.fn(),
+      getBootstrap: vi.fn(),
+      startBootstrap: vi.fn(),
     },
   },
 }));
@@ -130,6 +132,42 @@ vi.mock('lucide-react', () => ({
   X: () => <span data-testid="icon-x" />,
   Loader2: () => <span data-testid="icon-loader2" />,
   MessageCircleQuestion: () => <span data-testid="icon-question" />,
+  FileText: () => <span data-testid="icon-file" />,
+  ListChecks: () => <span data-testid="icon-list-checks" />,
+  RefreshCw: () => <span data-testid="icon-refresh" />,
+}));
+
+// Mock BootstrapSessionModal component
+vi.mock('../BootstrapSessionModal', () => ({
+  default: ({
+    isOpen,
+    kind,
+    mode,
+    onSubmit,
+  }: {
+    isOpen: boolean;
+    kind: string;
+    mode: string;
+    onSubmit: (payload: Record<string, string>) => Promise<{ success: boolean; error?: string }>;
+  }) => {
+    const [error, setError] = React.useState<string | undefined>();
+    return isOpen ? (
+      <div data-testid="bootstrap-modal">
+        <span data-testid="bootstrap-kind">{`${kind}:${mode}`}</span>
+        {error && <span data-testid="bootstrap-error">{error}</span>}
+        <button
+          data-testid="submit-bootstrap"
+          onClick={() => {
+            void onSubmit({ input: 'An idea', provider: 'anthropic', model: 'opus' }).then((result) =>
+              setError(result?.error),
+            );
+          }}
+        >
+          Submit
+        </button>
+      </div>
+    ) : null;
+  },
 }));
 
 // Helper to render with Router
@@ -140,6 +178,25 @@ const renderWithRouter = (ui: React.ReactElement, { route = '/' } = {}) => {
     </MemoryRouter>
   );
 };
+
+function bootstrapStatus(prd = false, ard = false) {
+  return {
+    defaultBranch: 'main',
+    isGitRepository: true,
+    prd: { onMain: prd },
+    ard: { onMain: ard },
+    stale: false,
+  };
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return (
+    <div data-testid="location">
+      {location.pathname}|{(location.state as { initialMessage?: string } | null)?.initialMessage}
+    </div>
+  );
+}
 
 describe('BoardView Component', () => {
   const mockProject = {
@@ -158,6 +215,7 @@ describe('BoardView Component', () => {
   const defaultContextValue = {
     tasks: mockTasks,
     isLoadingTasks: false,
+    loadTasks: vi.fn(),
     createTask: vi.fn(),
     deleteTask: vi.fn(),
     isTaskLive: vi.fn(() => false),
@@ -175,6 +233,7 @@ describe('BoardView Component', () => {
       mockTypedResponse({ id: 'conv1', claude_conversation_id: 'claude-1' } as never),
     );
     vi.mocked(api.projects.getWebServer).mockResolvedValue(mockTypedResponse({ success: false } as never));
+    vi.mocked(api.projects.getBootstrap).mockResolvedValue(mockTypedResponse(bootstrapStatus()));
   });
 
   describe('Rendering', () => {
@@ -566,6 +625,118 @@ describe('BoardView Component', () => {
       const { container } = renderWithRouter(<BoardView project={mockProject} className="custom-class" />);
 
       expect(container.querySelector('.custom-class')).toBeInTheDocument();
+    });
+  });
+
+  describe('Project docs (bootstrap) buttons', () => {
+    it('shows Create labels and disables Create initial tasks when no docs are on main', async () => {
+      renderWithRouter(<BoardView project={mockProject} />);
+
+      expect(await screen.findByText('Create PRD')).toBeInTheDocument();
+      expect(screen.getByText('Create ARD')).toBeInTheDocument();
+      const tasksButton = screen.getByText('Create initial tasks').closest('button')!;
+      expect(tasksButton).toBeDisabled();
+      expect(tasksButton.parentElement).toHaveAttribute(
+        'title',
+        'Merge PRD.md and ARD.md into main first',
+      );
+    });
+
+    it('shows Refine labels once the docs are on main', async () => {
+      vi.mocked(api.projects.getBootstrap).mockResolvedValue(mockTypedResponse(bootstrapStatus(true, false)));
+      renderWithRouter(<BoardView project={mockProject} />);
+
+      expect(await screen.findByText('Refine PRD')).toBeInTheDocument();
+      expect(screen.getByText('Create ARD')).toBeInTheDocument();
+      const tasksButton = screen.getByText('Create initial tasks').closest('button')!;
+      expect(tasksButton).toBeDisabled();
+      expect(tasksButton.parentElement).toHaveAttribute('title', 'Merge ARD.md into main first');
+    });
+
+    it('enables Create initial tasks when both docs are on main', async () => {
+      vi.mocked(api.projects.getBootstrap).mockResolvedValue(mockTypedResponse(bootstrapStatus(true, true)));
+      renderWithRouter(<BoardView project={mockProject} />);
+
+      expect(await screen.findByText('Refine ARD')).toBeInTheDocument();
+      const tasksButton = screen.getByText('Create initial tasks').closest('button')!;
+      expect(tasksButton).not.toBeDisabled();
+
+      fireEvent.click(tasksButton);
+      expect(screen.getByTestId('bootstrap-kind')).toHaveTextContent('tasks:create');
+    });
+
+    it('hides the group for a non-git project', async () => {
+      vi.mocked(api.projects.getBootstrap).mockResolvedValue(
+        mockTypedResponse({ ...bootstrapStatus(), defaultBranch: null, isGitRepository: false }),
+      );
+      renderWithRouter(<BoardView project={mockProject} />);
+
+      await waitFor(() => expect(api.projects.getBootstrap).toHaveBeenCalledWith('p1'));
+      expect(screen.queryByText('Create PRD')).not.toBeInTheDocument();
+    });
+
+    it('starts a session, reloads tasks, and navigates to the chat', async () => {
+      vi.mocked(api.projects.getBootstrap).mockResolvedValue(mockTypedResponse(bootstrapStatus(true, false)));
+      vi.mocked(api.projects.startBootstrap).mockResolvedValue(
+        mockTypedResponse({ taskId: 42, conversationId: 7, initialMessage: 'You are a senior PM' }, { status: 201 }),
+      );
+      const loadTasks = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(useTaskContext).mockReturnValue({ ...defaultContextValue, loadTasks });
+
+      render(
+        <MemoryRouter initialEntries={['/projects/p1']}>
+          <Routes>
+            <Route path="/projects/:projectId" element={<BoardView project={mockProject} />} />
+            <Route path="/projects/:projectId/tasks/:taskId/chat/:conversationId" element={<LocationProbe />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+
+      fireEvent.click(await screen.findByText('Refine PRD'));
+      expect(screen.getByTestId('bootstrap-kind')).toHaveTextContent('prd:refine');
+      fireEvent.click(screen.getByTestId('submit-bootstrap'));
+
+      expect(await screen.findByTestId('location')).toHaveTextContent(
+        '/projects/p1/tasks/42/chat/7|You are a senior PM',
+      );
+      expect(api.projects.startBootstrap).toHaveBeenCalledWith('p1', 'prd', {
+        input: 'An idea',
+        provider: 'anthropic',
+        model: 'opus',
+      });
+      expect(loadTasks).toHaveBeenCalledWith('p1');
+    });
+
+    it('shows the server error and re-checks the status on 409', async () => {
+      vi.mocked(api.projects.getBootstrap).mockResolvedValue(mockTypedResponse(bootstrapStatus(true, true)));
+      vi.mocked(api.projects.startBootstrap).mockResolvedValue(
+        mockTypedResponse({ error: 'ARD.md must be merged into main before creating initial tasks' } as never, {
+          status: 409,
+        }),
+      );
+      renderWithRouter(<BoardView project={mockProject} />);
+
+      fireEvent.click(await screen.findByText('Create initial tasks'));
+      fireEvent.click(screen.getByTestId('submit-bootstrap'));
+
+      expect(await screen.findByTestId('bootstrap-error')).toHaveTextContent('ARD.md must be merged');
+      await waitFor(() => expect(api.projects.getBootstrap).toHaveBeenCalledTimes(2));
+      expect(screen.getByTestId('bootstrap-modal')).toBeInTheDocument();
+    });
+
+    it('shows the credentials error on 403', async () => {
+      vi.mocked(api.projects.startBootstrap).mockResolvedValue(
+        mockTypedResponse(
+          { error: 'Claude credentials are not provisioned', code: 'PROVIDER_CREDENTIALS_MISSING' } as never,
+          { status: 403 },
+        ),
+      );
+      renderWithRouter(<BoardView project={mockProject} />);
+
+      fireEvent.click(await screen.findByText('Create ARD'));
+      fireEvent.click(screen.getByTestId('submit-bootstrap'));
+
+      expect(await screen.findByTestId('bootstrap-error')).toHaveTextContent('credentials are not provisioned');
     });
   });
 });

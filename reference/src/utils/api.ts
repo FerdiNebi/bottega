@@ -41,6 +41,10 @@ import type {
   SwitchWebServerRequest,
   SwitchWebServerResponse,
   VerifyWebServerResponse,
+  BootstrapKind,
+  BootstrapStatusResponse,
+  StartBootstrapRequest,
+  StartBootstrapResponse,
 } from '../../shared/api/projects';
 import type {
   ListAllTasksResponse,
@@ -337,6 +341,18 @@ export const api = {
     delete: (id: number): TypedFetch<DeleteProjectResponse> =>
       authenticatedFetch<DeleteProjectResponse>(`/api/projects/${id}`, {
         method: 'DELETE',
+      }),
+    // Project bootstrap (PRD / ARD / initial tasks)
+    getBootstrap: (id: number): TypedFetch<BootstrapStatusResponse> =>
+      authenticatedFetch<BootstrapStatusResponse>(`/api/projects/${id}/bootstrap`),
+    startBootstrap: (
+      id: number,
+      kind: BootstrapKind,
+      body: StartBootstrapRequest
+    ): TypedFetch<StartBootstrapResponse> =>
+      authenticatedFetch<StartBootstrapResponse>(`/api/projects/${id}/bootstrap/${kind}`, {
+        method: 'POST',
+        body: JSON.stringify(body),
       }),
     // Web server management (for worktree serving)
     getWebServer: (id: number): TypedFetch<GetWebServerResponse> =>

@@ -23,6 +23,7 @@ import type {
   BootstrapKind,
   BootstrapMode,
   BootstrapStatusResponse,
+  StartBootstrapResponse,
 } from '../../shared/api/projects.js';
 
 export const BOOTSTRAP_DOCS = { prd: 'PRD.md', ard: 'ARD.md' } as const;
@@ -120,10 +121,7 @@ export interface StartBootstrapSessionParams {
   broadcastFn?: BroadcastFn | undefined;
 }
 
-export interface StartBootstrapSessionResult {
-  taskId: number;
-  conversationId: number;
-}
+export type StartBootstrapSessionResult = StartBootstrapResponse;
 
 /**
  * Start a PRD / ARD / task-breakdown session: task with a fixed title and a
@@ -206,7 +204,7 @@ export async function startBootstrapSession(
       effort: null,
     });
 
-    return { taskId: task.id, conversationId };
+    return { taskId: task.id, conversationId, initialMessage: message };
   } catch (error) {
     if (conversationId !== null) conversationsDb.delete(conversationId);
     if (worktreeCreated) await removeWorktree(repoPath, task.id);
