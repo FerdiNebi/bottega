@@ -413,7 +413,9 @@ tested on its own. Spec first, then pure logic, then I/O, then UI.
    Tests: each renders with exactly its declared variables; each contains the
    non-negotiables (confirmation before writing, `CLAUDE.md` section with links,
    no commit/push, plain-text fallback, the `create-tasks.ts` invocation for
-   `task-breakdown`).
+   `task-breakdown`). The breakdown agent writes its list to
+   `bootstrap-tasks.json` at its worktree root (never committed). Tests live in
+   `server/constants/bootstrapPrompts.test.ts`. *(Done.)*
 5. **Frontend.** `api.projects.getBootstrap` / `startBootstrap` in
    `src/utils/api.ts`; `BootstrapSessionModal.tsx`; the Board header button
    group in `BoardView.tsx`.
