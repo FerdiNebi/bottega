@@ -252,12 +252,14 @@ Input — an array validated with a schema:
 The script:
 
 - **Derives project and owner from the session task.** An agent can only create
-  tasks in the project its own session belongs to, owned by the same user.
+  tasks in the project its own session belongs to, owned by the same user. The
+  session task must be a `Create initial tasks` task that is not yet
+  `completed`, so a rerun cannot create the list twice.
 - **Validates** unique `key`s, known `dependsOn` references, no cycles, non-empty
   titles and specs. On any error it exits non-zero and prints every problem, so
   the agent can correct the JSON in one pass.
 - **Computes dependency levels itself** — it never trusts a prefix from the
-  model:
+  model (a leading `N. ` on a submitted title is stripped):
 
   ```
   level(t) = 1                                  if t has no dependencies
@@ -380,6 +382,10 @@ tested on its own. Spec first, then pure logic, then I/O, then UI.
      creates rows + docs with correct titles and `Depends on` ids; rollback
      deletes created tasks when a later creation fails (use the in-memory
      `db-helper`, mock `createWorktree`).
+   - The creation logic lives in `taskBreakdown.ts` as
+     `createTasksFromBreakdown(sessionTaskId, input, deps)` with its I/O (DB,
+     worktree, task archive) injected; the script only wires the real
+     dependencies and prints the result. *(Done.)*
 3. **Server.**
    - `createWorktree(..., baseRef?)` — optional base ref, default behavior
      unchanged.
