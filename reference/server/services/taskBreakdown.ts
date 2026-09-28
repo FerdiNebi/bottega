@@ -199,6 +199,8 @@ export interface SessionTaskInfo {
 export interface CreateTasksDeps {
   getSessionTask: (taskId: number) => SessionTaskInfo | undefined;
   isGitRepository: (repoPath: string) => Promise<boolean>;
+  /** Ref new worktrees branch from (`origin/<default>` after a fetch). */
+  resolveBaseRef: (repoPath: string) => Promise<string>;
   createTask: (projectId: number, title: string, userId: number | null) => { id: number };
   deleteTask: (taskId: number) => void;
   markTaskCompleted: (taskId: number) => void;
@@ -207,6 +209,7 @@ export interface CreateTasksDeps {
     taskId: number,
     title: string,
     subprojectPath: string | null,
+    baseRef: string,
   ) => Promise<{ success: boolean; error?: string }>;
   removeWorktree: (repoPath: string, taskId: number) => Promise<unknown>;
   writeTaskDoc: (projectId: number, taskId: number, content: string) => void;
@@ -258,6 +261,7 @@ export async function createTasksFromBreakdown(
 
   const ordered = topologicalOrder(validation.tasks);
   const isGit = await deps.isGitRepository(session.repo_folder_path);
+  const baseRef = isGit ? await deps.resolveBaseRef(session.repo_folder_path) : '';
   const created: Array<CreatedBreakdownTask & { hasWorktree: boolean }> = [];
   const idsByKey = new Map<string, DependencyRef>();
 
@@ -274,6 +278,7 @@ export async function createTasksFromBreakdown(
           row.id,
           title,
           session.subproject_path ?? null,
+          baseRef,
         );
         if (!result.success) {
           throw new Error(`Failed to create worktree for "${title}": ${result.error ?? 'unknown error'}`);

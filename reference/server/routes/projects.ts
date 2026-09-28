@@ -10,13 +10,22 @@ import { saveConversationUpload } from '../services/documentation.js';
 import { upload } from '../middleware/upload.js';
 import type { ApiError } from '../../shared/api/_common.js';
 import type {
+  BootstrapStatusResponse,
   CreateProjectResponse,
   DeleteProjectResponse,
   GetProjectResponse,
   ListProjectsResponse,
+  StartBootstrapResponse,
   UpdateProjectResponse,
   UploadProjectFileResponse,
 } from '../../shared/api/projects.js';
+import type { BroadcastFn } from '../../shared/websocket/messages.js';
+import {
+  BootstrapRequestError,
+  getBootstrapStatus,
+  startBootstrapSession,
+} from '../services/projectBootstrap.js';
+import { ProviderCredentialsMissingError } from '../services/credentials/types.js';
 import type { ProjectUpdates } from '../database/db.js';
 import { validateBody, validateParams } from '../middleware/validate.js';
 import {
@@ -24,6 +33,10 @@ import {
   type IdParams,
 } from '../../shared/schemas/_common.js';
 import {
+  BootstrapParamsSchema,
+  type BootstrapParams,
+  StartBootstrapBodySchema,
+  type StartBootstrapBody,
   CreateProjectBodySchema,
   type CreateProjectBody,
   UpdateProjectBodySchema,
@@ -201,6 +214,82 @@ router.post(
         res.status(500).json({ error: 'Failed to save file' });
       }
     });
+  },
+);
+
+// ---- Project bootstrap (extra/project-bootstrap.md) ------------------------
+
+router.get(
+  '/:id/bootstrap',
+  validateParams(IdParamsSchema),
+  async (req: Request, res: Response<BootstrapStatusResponse | ApiError>) => {
+    try {
+      const userId = req.user!.id;
+      const { id: projectId } = req.validated!.params as IdParams;
+
+      const project = getProject(projectId, userId);
+      if (!project) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
+
+      const { baseRef: _baseRef, ...status } = await getBootstrapStatus(project.repo_folder_path);
+      res.json(status);
+    } catch (error) {
+      console.error('Error getting bootstrap status:', error);
+      res.status(500).json({ error: 'Failed to get bootstrap status' });
+    }
+  },
+);
+
+router.post(
+  '/:id/bootstrap/:kind',
+  validateParams(BootstrapParamsSchema),
+  validateBody(StartBootstrapBodySchema),
+  async (req: Request, res: Response<StartBootstrapResponse | ApiError>) => {
+    try {
+      const userId = req.user!.id;
+      const { id: projectId, kind } = req.validated!.params as BootstrapParams;
+      const { input, provider, model } = req.validated!.body as StartBootstrapBody;
+
+      const project = getProject(projectId, userId);
+      if (!project) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
+
+      const broadcastToConversationSubscribers =
+        req.app.locals.broadcastToConversationSubscribers as BroadcastFn | undefined;
+
+      const result = await startBootstrapSession({
+        kind,
+        project,
+        userId,
+        input,
+        provider,
+        model,
+        broadcastFn: (convId, msg) => broadcastToConversationSubscribers?.(convId, msg),
+      });
+      res.status(201).json(result);
+    } catch (error) {
+      if (error instanceof BootstrapRequestError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      if (error instanceof ProviderCredentialsMissingError) {
+        const providerLabel =
+          error.provider === 'openai'
+            ? 'OpenAI'
+            : error.provider === 'opencode'
+              ? 'OpenCode'
+              : 'Claude';
+        return res.status(403).json({
+          error: `${providerLabel} credentials are not provisioned for this user. Connect ${providerLabel} in Settings → Providers.`,
+          code: 'PROVIDER_CREDENTIALS_MISSING',
+          provider: error.provider,
+        } as never);
+      }
+      console.error('Error starting bootstrap session:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: `Failed to start session: ${message}` });
+    }
   },
 );
 

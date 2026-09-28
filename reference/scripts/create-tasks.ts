@@ -14,7 +14,12 @@
 import fs from 'fs';
 import { tasksDb, initializeDatabase } from '../server/database/db.js';
 import { writeTaskDoc, deleteTaskArchive } from '../server/services/documentation.js';
-import { createWorktree, removeWorktree, isGitRepository } from '../server/services/worktree.js';
+import {
+  createWorktree,
+  removeWorktree,
+  isGitRepository,
+  resolveBootstrapBase,
+} from '../server/services/worktree.js';
 import { createTasksFromBreakdown, parseCreateTasksArgs } from '../server/services/taskBreakdown.js';
 
 // ANSI color codes
@@ -51,6 +56,7 @@ async function createTasks(argv: string[]): Promise<void> {
   const result = await createTasksFromBreakdown(args.sessionTaskId, input, {
     getSessionTask: (id) => tasksDb.getWithProject(id),
     isGitRepository,
+    resolveBaseRef: async (repoPath) => (await resolveBootstrapBase(repoPath)).baseRef,
     createTask: (projectId, title, userId) => tasksDb.create(projectId, title, false, userId),
     deleteTask: (id) => tasksDb.delete(id),
     markTaskCompleted: (id) => tasksDb.update(id, { status: 'completed' }),

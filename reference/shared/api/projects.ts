@@ -142,3 +142,34 @@ export type VerifyWebServerResponse = VerifyWebServerSuccess | VerifyWebServerEr
 
 expectType<ListProjectsResponse>([] as ProjectRow[]);
 expectType<GetProjectResponse>({} as ProjectRow);
+
+// ---- Project bootstrap (extra/project-bootstrap.md) ------------------------
+//
+// `GET /api/projects/:id/bootstrap` fetches `origin/<default>` and reports
+// whether PRD.md / ARD.md are on it; `stale` means the fetch failed and the
+// local default branch was read instead. `POST /api/projects/:id/bootstrap/:kind`
+// starts a PRD / ARD / task-breakdown chat session.
+
+export type BootstrapKind = 'prd' | 'ard' | 'tasks';
+
+export type BootstrapMode = 'create' | 'refine';
+
+export interface BootstrapStatusResponse {
+  /** `null` when the project folder is not a git repository. */
+  defaultBranch: string | null;
+  isGitRepository: boolean;
+  prd: { onMain: boolean };
+  ard: { onMain: boolean };
+  stale: boolean;
+}
+
+export interface StartBootstrapRequest {
+  input?: string | undefined;
+  provider: 'anthropic' | 'openai' | 'opencode';
+  model: string;
+}
+
+export interface StartBootstrapResponse {
+  taskId: number;
+  conversationId: number;
+}

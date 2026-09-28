@@ -169,6 +169,7 @@ describe('createTasksFromBreakdown', () => {
     deps = {
       getSessionTask: (id) => testDb.tasksDb.getWithProject(id),
       isGitRepository: () => Promise.resolve(true),
+      resolveBaseRef: () => Promise.resolve('origin/main'),
       createTask: (pid, title, uid) => testDb.tasksDb.create(pid, title, false, uid),
       deleteTask: (id) => {
         testDb.tasksDb.delete(id);
@@ -231,7 +232,7 @@ describe('createTasksFromBreakdown', () => {
     );
 
     expect(deps.createWorktree).toHaveBeenCalledTimes(4);
-    expect(deps.createWorktree).toHaveBeenCalledWith('/repo', scaffold.id, '1. Project scaffold', null);
+    expect(deps.createWorktree).toHaveBeenCalledWith('/repo', scaffold.id, '1. Project scaffold', null, 'origin/main');
     expect(testDb.tasksDb.getById(sessionTaskId)!.status).toBe('completed');
   });
 

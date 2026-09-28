@@ -84,6 +84,34 @@ export async function getDefaultBranch(repoPath: string): Promise<string> {
   }
 }
 
+export interface BootstrapBase {
+  defaultBranch: string;
+  /** `origin/<default>` after a successful fetch, else the local default branch. */
+  baseRef: string;
+  /** True when the fetch failed and `baseRef` is the possibly stale local branch. */
+  stale: boolean;
+}
+
+/**
+ * Fetch the remote default branch and return the ref bootstrap should read from
+ * and branch from. Falls back to the local default branch when the fetch fails
+ * (offline, no `origin`).
+ */
+export async function resolveBootstrapBase(repoPath: string): Promise<BootstrapBase> {
+  const defaultBranch = assertValidBranchName(await getDefaultBranch(repoPath), 'default branch');
+  try {
+    await runCommand('git', ['fetch', '--quiet', 'origin', defaultBranch], {
+      cwd: repoPath,
+      timeout: 60_000,
+    });
+    return { defaultBranch, baseRef: `origin/${defaultBranch}`, stale: false };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[bootstrap] git fetch failed in ${repoPath}, using local ${defaultBranch}: ${message}`);
+    return { defaultBranch, baseRef: defaultBranch, stale: true };
+  }
+}
+
 /**
  * Get the current branch name from a worktree
  */
@@ -181,13 +209,16 @@ export interface CreateWorktreeResult {
 }
 
 /**
- * Create a worktree for a task
+ * Create a worktree for a task. Branches from the local default branch unless
+ * `baseRef` is given (project bootstrap passes `origin/<default>` so new tasks
+ * see freshly merged docs).
  */
 export async function createWorktree(
   repoPath: string,
   taskId: number,
   title: string | null | undefined,
   subprojectPath: string | null = null,
+  baseRef?: string,
 ): Promise<CreateWorktreeResult> {
   const sanitizedTitle = sanitizeTitle(title);
   const branch = `task/${taskId}-${sanitizedTitle}`;
@@ -197,11 +228,22 @@ export async function createWorktree(
   try {
     await fs.promises.mkdir(worktreesDir, { recursive: true });
 
-    const baseBranch = assertValidBranchName(await getDefaultBranch(repoPath), 'default branch');
+    const base = baseRef
+      ? assertValidBranchName(baseRef, 'base ref')
+      : assertValidBranchName(await getDefaultBranch(repoPath), 'default branch');
 
     await runCommand(
       'git',
-      ['worktree', 'add', '-b', assertValidBranchName(branch), worktreePath, baseBranch],
+      [
+        'worktree',
+        'add',
+        // A remote-tracking base would otherwise become the branch's upstream.
+        ...(baseRef ? ['--no-track'] : []),
+        '-b',
+        assertValidBranchName(branch),
+        worktreePath,
+        base,
+      ],
       { cwd: repoPath },
     );
 

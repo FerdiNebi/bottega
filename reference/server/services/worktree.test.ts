@@ -215,6 +215,41 @@ describe('Worktree Service', () => {
       ]);
     });
 
+    it('branches from an explicit base ref without tracking it', async () => {
+      withDispatch(async () => ({ stdout: '', stderr: '' }));
+
+      const result = await createWorktree('/home/user/repo', 16, 'Create PRD', null, 'origin/main');
+
+      expect(result.success).toBe(true);
+      const worktreeAddCall = mockRunCommand.mock.calls.find(
+        (c) => c[0] === 'git' && (c[1] as string[]).includes('worktree'),
+      );
+      expect(worktreeAddCall![1]).toEqual([
+        'worktree',
+        'add',
+        '--no-track',
+        '-b',
+        'task/16-create-prd',
+        getWorktreePath('/home/user/repo', 16),
+        'origin/main',
+      ]);
+      // The default branch is not looked up when a base ref is given.
+      expect(
+        mockRunCommand.mock.calls.some((c) => (c[1] as string[]).includes('symbolic-ref')),
+      ).toBe(false);
+    });
+
+    it('rejects a flag-looking base ref', async () => {
+      withDispatch(async () => ({ stdout: '', stderr: '' }));
+
+      const result = await createWorktree('/home/user/repo', 17, 'x', null, '--upload-pack=evil');
+
+      expect(result.success).toBe(false);
+      expect(
+        mockRunCommand.mock.calls.some((c) => (c[1] as string[]).includes('worktree')),
+      ).toBe(false);
+    });
+
     it('rejects an invalid base branch returned from git rather than executing it', async () => {
       withDispatch(async (_cmd, args) => {
         // Simulate a malicious upstream HEAD with a flag-looking name.

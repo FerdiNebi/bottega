@@ -108,7 +108,8 @@ server's local default branch stale. Two rules keep bootstrap correct anyway:
   and every task created by session 3. Otherwise a freshly created task's
   worktree would not contain the PRD/ARD its agents are told to follow. This is
   an optional base ref on worktree creation; the board's normal "New Task" path is
-  unchanged.
+  unchanged. A worktree branched from a remote base is created with
+  `--no-track`, so the task branch never gets `origin/<default>` as its upstream.
 
 ## Create vs Refine mode
 
@@ -302,11 +303,13 @@ the same on every harness.
 
 | Method | Route | Purpose |
 |---|---|---|
-| `GET` | `/api/projects/:id/bootstrap` | Status: `{ defaultBranch, prd: { onMain }, ard: { onMain }, stale }` (fetches first). |
+| `GET` | `/api/projects/:id/bootstrap` | Status: `{ defaultBranch, isGitRepository, prd: { onMain }, ard: { onMain }, stale }` (fetches first; `defaultBranch` is `null` for a non-git folder). |
 | `POST` | `/api/projects/:id/bootstrap/:kind` | Start a session. `kind ∈ {prd, ard, tasks}`; body `{ input?, provider, model }`. Returns `201 { taskId, conversationId }`. |
 
 Both are project-membership checked like every project route. `POST` returns
-**409** when a prerequisite is missing (tasks without PRD+ARD on main) and **403**
+**409** when a prerequisite is missing (tasks without PRD+ARD on main, or a
+project folder that is not a git repository), **400** for a PRD create session
+without an idea, and **403**
 `PROVIDER_CREDENTIALS_MISSING` when the chosen provider is not connected — the
 same responses the board already handles. The `(provider, model)` pair is
 explicit and validated like conversation creation (`isModelForProvider`); there is
@@ -400,6 +403,10 @@ tested on its own. Spec first, then pure logic, then I/O, then UI.
      refine mode selection; 409 for `tasks` without both docs; worktree created
      from `origin/<default>`; route validation, non-member 404, response shape;
      `createWorktree` default unchanged when no base ref is passed.
+   - The fetch + fallback lives in `worktree.ts` (`resolveBootstrapBase`) so
+     `create-tasks.ts` can branch from `origin/<default>` without importing the
+     conversation stack. A failed session start removes the task, worktree,
+     doc, and conversation it created. *(Done.)*
 4. **Prompts.** `prd.md`, `ard.md`, `task-breakdown.md` under
    `server/constants/prompts/`, registered in `PROMPT_DEFINITIONS` with their
    variable allowlists (at least `mode`, `input`, `taskId`, `scriptsDir`).
@@ -427,7 +434,7 @@ tested on its own. Spec first, then pure logic, then I/O, then UI.
 | Task-creation script | `reference/scripts/create-tasks.ts` |
 | HTTP routes | `reference/server/routes/projects.ts` (`/bootstrap`) |
 | Request/response schemas | `reference/shared/schemas/projects.ts`, `reference/shared/api/projects.ts` |
-| Worktree base ref | `reference/server/services/worktree.ts` (`createWorktree`) |
+| Worktree base ref + remote fetch | `reference/server/services/worktree.ts` (`createWorktree`, `resolveBootstrapBase`) |
 | Session prompts | `reference/server/constants/prompts/{prd,ard,task-breakdown}.md` |
 | Prompt registry | `reference/server/services/promptRenderer.ts` (`PROMPT_DEFINITIONS`) |
 | Board buttons | `reference/src/components/Dashboard/BoardView.tsx` |
