@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { toPromptPath } from './promptRenderer.js';
 import {
   readTaskDoc,
   writeTaskDoc,
@@ -204,7 +205,7 @@ describe('Documentation Service - Phase 2', () => {
 
       expect(result).not.toContain('## Task Context');
       expect(result).not.toContain('Task documentation body that should NOT be inlined');
-      expect(result).toContain(getTaskDocPath(testProjectId, 1));
+      expect(result).toContain(toPromptPath(getTaskDocPath(testProjectId, 1)));
     });
 
     it('should instruct the agent to read the task plan in full at conversation start', () => {
@@ -218,10 +219,10 @@ describe('Documentation Service - Phase 2', () => {
       const result1 = buildContextPrompt(testProjectId, 1);
       const result2 = buildContextPrompt(testProjectId, 2);
 
-      expect(result1).toContain(getTaskDocPath(testProjectId, 1));
-      expect(result1).not.toContain(getTaskDocPath(testProjectId, 2));
-      expect(result2).toContain(getTaskDocPath(testProjectId, 2));
-      expect(result2).not.toContain(getTaskDocPath(testProjectId, 1));
+      expect(result1).toContain(toPromptPath(getTaskDocPath(testProjectId, 1)));
+      expect(result1).not.toContain(toPromptPath(getTaskDocPath(testProjectId, 2)));
+      expect(result2).toContain(toPromptPath(getTaskDocPath(testProjectId, 2)));
+      expect(result2).not.toContain(toPromptPath(getTaskDocPath(testProjectId, 1)));
     });
   });
 

@@ -26,6 +26,7 @@ import {
   generateYoloMessage,
 } from '../constants/agentPrompts.js';
 import { loadAgentModelSettings } from './agentModelSettings.js';
+import { toPromptPath } from './promptRenderer.js';
 import type { AgentRunRow, CreatedConversation } from '../database/db.js';
 import type {
   AgentType,
@@ -74,7 +75,7 @@ export async function startAgentRun(
     effectivePath = getWorktreeProjectPath(effectivePath, taskId, taskWithProject.subproject_path);
   }
   // Task doc lives in the central archive, not the worktree — survives PR merge
-  const taskDocPath = getTaskDocPath(taskWithProject.project_id, taskId);
+  const taskDocPath = toPromptPath(getTaskDocPath(taskWithProject.project_id, taskId));
 
   // Generate message based on agent type
   let message: string;

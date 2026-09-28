@@ -8,6 +8,22 @@ const __dirname = path.dirname(__filename);
 
 const DEFAULTS_ROOT = path.join(__dirname, '..', 'constants');
 
+/**
+ * Absolute path to the agent completion scripts (complete-plan.ts, …),
+ * available to every prompt as {{scriptsDir}}. Forward slashes so the path
+ * also works in Git Bash on Windows.
+ */
+export const SCRIPTS_DIR = toPromptPath(path.join(__dirname, '..', '..', 'scripts'));
+
+/**
+ * Format a filesystem path for inclusion in an agent prompt. On Windows the
+ * agent's Bash tool is Git Bash, which strips backslashes from `C:\a\b`, so we
+ * hand out `C:/a/b` instead — valid for both Bash and the Read/Edit tools.
+ */
+export function toPromptPath(p: string): string {
+  return process.platform === 'win32' ? p.replace(/\\/g, '/') : p;
+}
+
 function getArchiveRoot(): string {
   return process.env.BOTTEGA_ARCHIVE_ROOT || path.join(os.homedir(), '.bottega');
 }
@@ -249,5 +265,5 @@ export function findUnknownVariables(name: string, content: string): string[] {
  * Convenience: load a prompt by name and render with vars.
  */
 export function renderPrompt(name: string, vars: Record<string, unknown>): string {
-  return render(loadPrompt(name), vars);
+  return render(loadPrompt(name), { scriptsDir: SCRIPTS_DIR, ...vars });
 }

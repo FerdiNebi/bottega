@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createTestDatabase, type TestDatabase } from './test/db-helper.js';
 import { buildContextPrompt } from './services/documentation.js';
+import { toPromptPath } from './services/promptRenderer.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -80,7 +81,7 @@ describe('WebSocket Handler - Task-based Conversation Flow', () => {
       const contextPrompt = buildContextPrompt(projectId, taskId);
 
       expect(contextPrompt).toContain('## Task Plan File');
-      expect(contextPrompt).toContain(taskDocPath);
+      expect(contextPrompt).toContain(toPromptPath(taskDocPath));
       expect(contextPrompt).toContain('MUST read this file in full');
     });
 

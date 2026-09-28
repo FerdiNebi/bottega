@@ -1,6 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { toPromptPath } from './promptRenderer.js';
 
 const TASKS_FOLDER = 'tasks';
 const RECORDINGS_FOLDER = 'recordings';
@@ -308,7 +309,13 @@ export function buildContextPrompt(projectId: number, taskId: number): string {
 
   const sections: string[] = [];
 
-  const taskDocPath = getTaskDocPath(projectId, taskId);
+  if (process.platform === 'win32') {
+    sections.push(`## Shell Environment
+
+This machine runs Windows. Your Bash tool is **Git Bash**: use forward-slash paths (\`D:/dir/file\` or \`/d/dir/file\`), never backslashes, and Unix redirections (\`2>/dev/null\`, not \`2>$null\`). Git may check files out with CRLF line endings; a diff that differs only in line endings is not a real change — ignore it.`);
+  }
+
+  const taskDocPath = toPromptPath(getTaskDocPath(projectId, taskId));
   sections.push(`## Task Plan File
 
 The canonical task plan — also known as the specification for this task — is stored at:
@@ -322,7 +329,7 @@ Note: any \`.bottega/tasks/*.md\` files inside the repo itself are legacy from b
 
   const inputFiles = listTaskInputFiles(projectId, taskId);
   if (inputFiles.length > 0) {
-    const inputFilesPath = getTaskInputFilesPath(projectId, taskId);
+    const inputFilesPath = toPromptPath(getTaskInputFilesPath(projectId, taskId));
     const fileList = inputFiles.map((f) => `- ${f.name}`).join('\n');
     sections.push(
       `## Input Files\n\nIMPORTANT: At the start of this conversation, you MUST read ALL files in the following directory to get context:\n${inputFilesPath}\n\nFiles to read:\n${fileList}\n\nUse the Read tool to read each file before proceeding with any other actions. These files contain important context for this task.`,
