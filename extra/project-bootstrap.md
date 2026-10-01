@@ -52,6 +52,10 @@ edits by typing, and — for sessions 1 and 2 — opens the PR from Task Detail'
 existing **Create PR** action (commit → push → `gh pr create`; see
 `createOrUpdatePR` in
 [`../reference/server/services/prService.ts`](../reference/server/services/prService.ts)).
+On a project without a remote, Task Detail's **Merge without PR** merges the
+session branch into the local default branch instead (see the local merge in
+[`../core/task-and-workspace.md`](../core/task-and-workspace.md)); the status
+check then reads the local branch and reports it as possibly stale.
 
 ### Why the instructions live in the first message
 
@@ -141,15 +145,22 @@ Both templates impose the same protocol; only the checklist differs.
 4. **Stop interviewing only at ≥ 99% with no critical item open.** Then ask for
    explicit confirmation (`Write PRD now` / `Keep refining`). Never write the
    document without that confirmation.
-5. **Write the document and update `CLAUDE.md`** (see above), then post a short
-   summary of what was written and invite corrections.
+5. **Write the document and update `CLAUDE.md`** (see above), **commit both**
+   on the session branch, then post a short summary of what was written and
+   invite corrections.
 6. **Iterate.** The human requests edits by chatting; the agent edits the file in
-   place. When the human is satisfied, they open the PR from Task Detail.
+   place and **commits each round of changes**. When the human is satisfied,
+   they open the PR from Task Detail (or merge locally without a remote).
 
-Hard constraints in both templates: **never commit, push, or open a PR** (the
-Create PR action owns that); never touch files other than the document and the
-`CLAUDE.md` section; never invent requirements the human did not confirm — record
-unresolved items in an "Open questions" section instead.
+Committing every change keeps the work on the branch as history rather than as
+uncommitted files a worktree cleanup could discard, and makes each revision
+reviewable in the PR.
+
+Hard constraints in both templates: commit only the document and the
+`CLAUDE.md` section, with a short descriptive message; **never push or open a
+PR** (the Create PR action owns that); never touch other files; never invent
+requirements the human did not confirm — record unresolved items in an "Open
+questions" section instead. The task-breakdown session never commits.
 
 ### PRD coverage checklist
 
@@ -344,8 +355,9 @@ no default model.
   owner. Agents already run with full shell access (see
   [`auth-and-multi-user.md`](./auth-and-multi-user.md)); this script adds no new
   privilege, only a structured way to express intent.
-- The session templates forbid committing, pushing, and reading credentials; the
-  PR is created by the server-side Create PR action.
+- The session templates forbid pushing and reading credentials (the PRD/ARD
+  sessions commit locally to their own branch only); the PR is created by the
+  server-side Create PR action.
 
 ## What to build
 
@@ -415,7 +427,8 @@ tested on its own. Spec first, then pure logic, then I/O, then UI.
    variable allowlists (at least `mode`, `input`, `taskId`, `scriptsDir`).
    Tests: each renders with exactly its declared variables; each contains the
    non-negotiables (confirmation before writing, `CLAUDE.md` section with links,
-   no commit/push, plain-text fallback, the `create-tasks.ts` invocation for
+   commit-each-change but never push/PR for PRD/ARD, no commit for the
+   breakdown, plain-text fallback, the `create-tasks.ts` invocation for
    `task-breakdown`). The breakdown agent writes its list to
    `bootstrap-tasks.json` at its worktree root (never committed). Tests live in
    `server/constants/bootstrapPrompts.test.ts`. *(Done.)*

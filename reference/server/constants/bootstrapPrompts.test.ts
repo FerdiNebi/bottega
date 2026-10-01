@@ -51,8 +51,8 @@ describe('project bootstrap prompts', () => {
       expect(rendered).toContain('1234');
     });
 
-    it('forbids committing, pushing, and opening a PR', () => {
-      expect(loadDefault(name)).toMatch(/never commit, push, or open a pull request/i);
+    it('forbids pushing and opening a PR', () => {
+      expect(loadDefault(name)).toMatch(/never (commit, )?push,? or open a pull request/i);
     });
 
     it('requires explicit confirmation before acting', () => {
@@ -84,6 +84,14 @@ describe('project bootstrap prompts', () => {
       expect(content).toContain('Open questions');
     });
 
+    it('commits only its own document and CLAUDE.md, after writing and after each edit', () => {
+      const content = loadDefault(name);
+      const doc = name === 'prd' ? 'PRD.md' : 'ARD.md';
+      expect(content).toContain(`git add ${doc} CLAUDE.md`);
+      expect(content).toMatch(/commit each round of changes/);
+      expect(content).toMatch(/never `git add -A` or `git add \.`/);
+    });
+
     it('handles create and refine modes', () => {
       const content = loadDefault(name);
       expect(content).toMatch(/`create` means/);
@@ -95,6 +103,10 @@ describe('project bootstrap prompts', () => {
     const content = loadDefault('ard');
     expect(content).toMatch(/Testing strategy/i);
     expect(content).toMatch(/rejected alternatives/);
+  });
+
+  it('the task breakdown never commits', () => {
+    expect(loadDefault('task-breakdown')).toMatch(/never commit, push, or open a pull request/i);
   });
 
   it('the task breakdown runs create-tasks.ts with the session task id', () => {

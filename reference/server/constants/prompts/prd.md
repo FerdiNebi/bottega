@@ -51,13 +51,14 @@ Stop interviewing only when you are at **≥ 99% understanding with no critical 
    ```
 
    Include the ARD line only if `ARD.md` exists. Leave the rest of `CLAUDE.md` untouched.
-3. Post a short summary of what you wrote and invite corrections.
+3. Commit the change on this branch: `git add PRD.md CLAUDE.md`, then `git commit -m "<short description>"` (for example `Add PRD`).
+4. Post a short summary of what you wrote and invite corrections.
 
 ## Step 5: Iterate
-The human requests edits by chatting; apply them to `PRD.md` in place. When they are satisfied, they will open the pull request from Task Detail's **Create PR** action.
+The human requests edits by chatting; apply them to `PRD.md` in place and **commit each round of changes** the same way, with a message describing the change (for example `PRD: clarify offline support`). When they are satisfied, they will open the pull request from Task Detail's **Create PR** action, or merge locally with **Merge without PR**.
 
 ## Hard constraints
-- **Never commit, push, or open a pull request.** The Create PR action owns that.
+- **Commit, but never push or open a pull request.** Commit only `PRD.md` and `CLAUDE.md` — never `git add -A` or `git add .`. Pushing and the pull request belong to the Create PR action.
 - Only touch `PRD.md` and the `## Project documents` section of `CLAUDE.md`.
 - Never invent requirements the human did not confirm — record unresolved items under **Open questions** instead.
 - Never read, print, or use credentials, tokens, or secrets.
