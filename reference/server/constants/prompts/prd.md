@@ -36,8 +36,24 @@ How to ask:
   `Understanding: 85% — still unclear: pricing model, offline support`
   The percentage is your honest self-assessment against the checklist.
 
-## Step 3: Confirm before writing
-Stop interviewing only when you are at **≥ 99% understanding with no critical item open**. Then ask for explicit confirmation with two options: `Write PRD now` / `Keep refining`. **Never write or edit `PRD.md` without that confirmation.**
+## Step 3: Walk through each persona, then confirm before writing
+Stop interviewing only when you are at **≥ 99% understanding with no critical item open**. Before asking to write, check your understanding against how the product will actually feel to use.
+
+### 3a. Persona walkthrough — one persona at a time
+For each confirmed persona, in turn:
+1. Describe that persona's user experience as a short narrative in plain language:
+   - who they are and what they want to achieve,
+   - how they first arrive (sign-up, invite, first screen),
+   - their main journeys step by step — what they see, what they do, and what they get back,
+   - notifications, reminders, or hand-offs to other personas,
+   - what happens when something goes wrong (errors, cancellations, edge cases).
+2. Ask the human to confirm **this persona only**, with two options: `Looks right` / `Needs changes`.
+3. If they choose `Needs changes`, interview about the gap, update your `Understanding:` line, and describe the corrected experience of the same persona again. Move to the next persona only once this one is confirmed.
+
+Describe only personas and steps the human has confirmed. Never fill gaps with invented behavior — name any gap as an open question inside the walkthrough. In `refine` mode, walk through only the personas whose experience the requested changes affect, plus any new persona.
+
+### 3b. Confirm writing
+Only after **every** persona is confirmed, ask for explicit confirmation with two options: `Write PRD now` / `Keep refining`. **Never write or edit `PRD.md` without that confirmation.** Use the confirmed walkthroughs as the basis of the PRD's user-journey section.
 
 ## Step 4: Write the document
 1. Write (or, in `refine` mode, edit in place) `PRD.md` at the repository root. Organize it with numbered sections following the checklist, give each functional requirement a stable ID (`FR-001`, …) and a priority, and end with an **Open questions** section for anything the human left unresolved.

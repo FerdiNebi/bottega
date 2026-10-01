@@ -99,6 +99,32 @@ describe('project bootstrap prompts', () => {
     });
   });
 
+  it('the PRD session confirms each persona experience one by one before writing', () => {
+    const content = loadDefault('prd');
+    const walkthrough = content.indexOf('Persona walkthrough');
+    const writeConfirm = content.indexOf('`Write PRD now`');
+    expect(walkthrough).toBeGreaterThan(content.indexOf('≥ 99%'));
+    expect(writeConfirm).toBeGreaterThan(walkthrough);
+    expect(content).toMatch(/one persona at a time/);
+    expect(content).toContain('`Looks right` / `Needs changes`');
+    expect(content).toMatch(/after \*\*every\*\* persona is confirmed/);
+  });
+
+  it('the ARD session asks about constraints first, then proposes for accept or correct', () => {
+    const content = loadDefault('ard');
+    const phase1 = content.indexOf('Phase 1: Requirements and constraints');
+    const phase2 = content.indexOf('Phase 2: Propose');
+    expect(phase1).toBeGreaterThan(0);
+    expect(phase2).toBeGreaterThan(phase1);
+    for (const topic of ['Cost limits', 'Scale', 'Reliability', 'Security and compliance', 'Team']) {
+      expect(content).toContain(`**${topic}**`);
+    }
+    expect(content).toMatch(/Never ask them to choose a technology in this phase/);
+    expect(content).toMatch(/Never ask an open technical question/);
+    expect(content).toContain('`Accept` (first, recommended) or `Change`');
+    expect(content).toMatch(/deployment strategy/);
+  });
+
   it('the ARD session covers the testing strategy and rejected alternatives', () => {
     const content = loadDefault('ard');
     expect(content).toMatch(/Testing strategy/i);

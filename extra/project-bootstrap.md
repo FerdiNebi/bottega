@@ -8,10 +8,12 @@ full of well-specified tasks the orchestration loop can run":
 1. **Create / Refine PRD** — an agent interviews the human about the product
    until it is confident it understands what to build, then writes `PRD.md` at
    the repo root and links it from `CLAUDE.md`.
-2. **Create / Refine ARD** — an agent acting as an architect *recommends* and
-   confirms the architecture, stack, engineering patterns, project structure, and
-   testing strategy, then writes `ARD.md` (Architecture Requirements Document) and
-   links it from `CLAUDE.md`.
+2. **Create / Refine ARD** — an agent acting as an architect asks about the
+   human's requirements and constraints (cost, scale, reliability, compliance,
+   team), then *proposes* the architecture, stack, deployment, engineering
+   patterns, project structure, and testing strategy for the human to accept or
+   correct. It then writes `ARD.md` (Architecture Requirements Document) and links
+   it from `CLAUDE.md`.
 3. **Create initial tasks** — once both documents are merged, an agent breaks the
    PRD + ARD into PR-sized tasks, shows the list in chat, and — on confirmation —
    creates them as Bottega tasks whose titles encode their dependency level
@@ -144,7 +146,8 @@ Both templates impose the same protocol; only the checklist differs.
    progress signal for the human, not a computed metric.
 4. **Stop interviewing only at ≥ 99% with no critical item open.** Then ask for
    explicit confirmation (`Write PRD now` / `Keep refining`). Never write the
-   document without that confirmation.
+   document without that confirmation. The PRD session first runs a
+   [persona walkthrough](#prd-persona-walkthrough).
 5. **Write the document and update `CLAUDE.md`** (see above), **commit both**
    on the session branch, then post a short summary of what was written and
    invite corrections.
@@ -162,6 +165,27 @@ PR** (the Create PR action owns that); never touch other files; never invent
 requirements the human did not confirm — record unresolved items in an "Open
 questions" section instead. The task-breakdown session never commits.
 
+### PRD persona walkthrough
+
+A checklist at 99% can still hide a wrong picture of how the product feels to
+use. So when the PRD session reaches the 99% bar, and before asking `Write PRD
+now`, it walks through the confirmed personas **one at a time**. For each it
+describes that persona's experience as a short narrative: who they are and what
+they want, how they first arrive, their main journeys step by step (what they
+see, do, and get back), the notifications or hand-offs they receive, and what
+happens when something goes wrong. It then asks for confirmation of that
+persona alone (`Looks right` / `Needs changes`).
+
+- A correction sends the session back to interviewing that point. It updates its
+  understanding line and re-describes the corrected persona before moving on.
+- It never describes a persona the human did not confirm, and never invents
+  steps. Gaps are named as open questions inside the walkthrough.
+- Only after every persona is confirmed does it ask `Write PRD now` / `Keep
+  refining`. The confirmed walkthroughs feed the PRD's user-journey section.
+
+In refine mode the walkthrough covers only personas whose experience the
+requested changes touch, plus any persona that is new.
+
 ### PRD coverage checklist
 
 Problem and context · target users and personas · goals and **non-goals** · core
@@ -171,11 +195,43 @@ localization) · data, integrations, and external systems · constraints (budget
 timeline, compliance, platforms) · success metrics · MVP scope vs later releases
 · risks, assumptions, and open questions.
 
+### ARD session: the agent leads, the human accepts or corrects
+
+The ARD session is **led by the agent**. The human is never expected to supply
+technical answers. They answer questions about their situation, then accept or
+correct the agent's proposals. It runs in two phases.
+
+**Phase 1: requirements and constraints.** The agent asks only about things the
+human owns, not technology. It first derives what it can from the PRD and the
+repository, and asks only about what is missing:
+
+- cost limits: monthly hosting budget, paid vs free/open-source services
+- scale: expected users, data volume, traffic peaks, growth
+- reliability: acceptable downtime, backup and recovery needs
+- security and compliance: personal data, regulations, data residency
+- who builds and maintains it, and their skills
+- timeline
+- existing accounts or infrastructure (cloud provider, domain, CI)
+- hard constraints and preferences ("must run on X", "avoid Y")
+
+Questions are phrased in plain language, multiple choice with a recommended
+default (e.g. budget tiers, scale bands). No technology choice is asked here.
+
+**Phase 2: proposal, accept or correct.** The agent proposes the architecture one
+area at a time. For each area it states its proposal, why it fits the
+constraints from phase 1 and the PRD, and what it rejected and why. It then asks
+`Accept` / `Change`, where `Change` offers the main alternatives plus free-form
+correction. It never asks an open technical question such as "Which database do
+you want?". A correction may revise earlier areas the agent then re-proposes,
+for example a lower budget changing the hosting plan.
+
+The understanding line tracks both phases (e.g. `Understanding: 80% — accepted
+9/14 areas; open: deployment, observability`), and the usual 99% bar and
+`Write ARD now` confirmation apply.
+
 ### ARD coverage checklist
 
-The ARD agent **recommends** — every question presents concrete options with
-trade-offs and a recommended default derived from the PRD — rather than only
-asking. Checklist: architectural style and system context · components/modules
+Phase 2 covers: architectural style and system context · components/modules
 and their responsibilities · technology stack with rationale **and rejected
 alternatives** · project/directory structure (as a tree) · data model and storage
 · APIs and integration contracts · authentication, authorization, and security ·
