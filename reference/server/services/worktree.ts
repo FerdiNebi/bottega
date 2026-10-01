@@ -672,14 +672,36 @@ export interface MergeLocallyResult {
   success: boolean;
   branch?: string;
   defaultBranch?: string;
+  /** True when the merged default branch was pushed to `origin`. */
+  pushed?: boolean;
+  /** Set when there is a remote but the push failed; the merge is kept. */
+  pushError?: string;
   error?: string;
 }
 
+async function hasOriginRemote(repoPath: string): Promise<boolean> {
+  try {
+    await runCommand('git', ['remote', 'get-url', 'origin'], { cwd: repoPath });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function gitErrorText(error: unknown): string {
+  // Failed-command messages carry stderr; some git output (e.g. CONFLICT
+  // lines) only appears on stdout.
+  const stdout = (error as { stdout?: string }).stdout?.trim();
+  const message = error instanceof Error ? error.message : String(error);
+  return stdout ? `${message.trim()}\n${stdout}` : message.trim();
+}
+
 /**
- * "Merge without PR": commit any uncommitted worktree changes, merge the task
- * branch into the default branch in the main checkout, then remove the
- * worktree and branch. Never pushes. The worktree is kept whenever the merge
- * does not happen, so no work is lost.
+ * "Merge without PR": sync the default branch from `origin`, commit any
+ * uncommitted worktree changes, merge the task branch into the default branch
+ * in the main checkout, push it when there is a remote, then remove the
+ * worktree and branch. The worktree is kept whenever the merge does not
+ * happen, so no work is lost; a failed push is reported but keeps the merge.
  */
 export async function mergeLocally(
   repoPath: string,
@@ -709,6 +731,35 @@ export async function mergeLocally(
         success: false,
         error: `The main checkout must be on ${defaultBranch} to merge (it is on ${checkedOut || 'a detached HEAD'}). Check out ${defaultBranch} in ${repoPath} and try again.`,
       };
+    }
+
+    // Bring the local default branch up to date first, so the push below is
+    // not rejected because PRs were merged on the remote in the meantime.
+    const hasRemote = await hasOriginRemote(repoPath);
+    if (hasRemote) {
+      let fetched = false;
+      try {
+        await runCommand('git', ['fetch', '--quiet', 'origin', defaultBranch], {
+          cwd: repoPath,
+          timeout: 60_000,
+        });
+        fetched = true;
+      } catch (fetchError) {
+        // Offline or no such remote branch yet: merge locally; the push reports it.
+        console.warn(`[merge-local] fetch failed in ${repoPath}: ${gitErrorText(fetchError)}`);
+      }
+      if (fetched) {
+        try {
+          await runCommand('git', ['merge', '--ff-only', `origin/${defaultBranch}`], {
+            cwd: repoPath,
+          });
+        } catch (ffError) {
+          return {
+            success: false,
+            error: `Could not update local ${defaultBranch} from origin/${defaultBranch} (it may have diverged, or local changes are in the way). Nothing was merged; the worktree was kept. ${gitErrorText(ffError)}`,
+          };
+        }
+      }
     }
 
     // Check first: git reports "nothing to commit" on stdout, which the
@@ -742,15 +793,29 @@ export async function mergeLocally(
       };
     }
 
+    let pushed = false;
+    let pushError: string | undefined;
+    if (hasRemote) {
+      try {
+        await runCommand('git', ['push', 'origin', defaultBranch], {
+          cwd: repoPath,
+          timeout: 120_000,
+        });
+        pushed = true;
+      } catch (error) {
+        pushError = gitErrorText(error);
+      }
+    }
+
     const removed = await removeWorktree(repoPath, taskId);
     if (!removed.success) {
       return {
         success: false,
-        error: `Merged into ${defaultBranch}, but removing the worktree failed: ${removed.error}`,
+        error: `Merged into ${defaultBranch}${pushed ? ' and pushed' : ''}, but removing the worktree failed: ${removed.error}`,
       };
     }
 
-    return { success: true, branch, defaultBranch };
+    return { success: true, branch, defaultBranch, pushed, ...(pushError ? { pushError } : {}) };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { success: false, error: message };

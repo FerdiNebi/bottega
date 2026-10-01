@@ -954,8 +954,9 @@ router.post(
   },
 );
 
-// "Merge without PR": commit + merge into the local default branch + remove
-// the worktree. Never pushes. A failed merge keeps the worktree (409).
+// "Merge without PR": sync from origin + commit + merge into the default
+// branch + push (when there is a remote) + remove the worktree. A failed merge
+// keeps the worktree (409); a failed push is reported in a 200 as `pushError`.
 router.post(
   '/tasks/:id/merge-local',
   validateParams(IdParamsSchema),
@@ -989,6 +990,8 @@ router.post(
         success: true,
         branch: result.branch!,
         defaultBranch: result.defaultBranch!,
+        pushed: !!result.pushed,
+        ...(result.pushError ? { pushError: result.pushError } : {}),
       };
       if (wasActiveServer && project?.serve_symlink_path) {
         const switchResult = await switchWorktree(taskWithProject.project_id, null, userId);

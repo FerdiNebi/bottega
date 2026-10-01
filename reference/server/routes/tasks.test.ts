@@ -1288,13 +1288,19 @@ describe('Tasks Routes - Phase 3', () => {
         success: true,
         branch: 'task/1-create-ard',
         defaultBranch: 'main',
+        pushed: true,
       });
 
       const response = await request(app).post('/api/tasks/1/merge-local');
 
       expect(response.status).toBe(200);
       expect(mergeLocally).toHaveBeenCalledWith('/path/to/repo', 1, 'Create ARD');
-      expect(response.body).toEqual({ success: true, branch: 'task/1-create-ard', defaultBranch: 'main' });
+      expect(response.body).toEqual({
+        success: true,
+        branch: 'task/1-create-ard',
+        defaultBranch: 'main',
+        pushed: true,
+      });
       expect(switchWorktree).not.toHaveBeenCalled();
     });
 
@@ -1313,6 +1319,24 @@ describe('Tasks Routes - Phase 3', () => {
 
       expect(switchWorktree).toHaveBeenCalledWith(1, null, testUserId);
       expect(response.body.serverSwitched).toBe(true);
+    });
+
+    it('returns 200 with pushError when the merge happened but the push failed', async () => {
+      vi.mocked(tasksDb.getWithProject).mockReturnValue(mockTaskWithProject as never);
+      vi.mocked(worktreeExists).mockResolvedValue(true);
+      vi.mocked(getProject).mockReturnValue({ id: 1 } as never);
+      vi.mocked(mergeLocally).mockResolvedValue({
+        success: true,
+        branch: 'b',
+        defaultBranch: 'main',
+        pushed: false,
+        pushError: 'rejected',
+      });
+
+      const response = await request(app).post('/api/tasks/1/merge-local');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ success: true, pushed: false, pushError: 'rejected' });
     });
 
     it('returns 409 with the reason when the merge does not happen', async () => {

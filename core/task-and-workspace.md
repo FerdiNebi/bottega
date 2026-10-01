@@ -88,18 +88,28 @@ flips `pending → in_progress` on the first agent activity (see
   Merging the PR and cleaning up the worktree afterward is a separate action —
   see [`pull-request-agent.md`](./pull-request-agent.md). The pipeline never
   auto-deletes a worktree mid-flight.
-- **Local merge ("Merge without PR"):** for projects without a remote, or work
-  that needs no review. Commit any uncommitted worktree changes (message = task
-  title) — skipped when the session already committed everything — then
-  `git merge --no-ff` the task branch into the default branch in the main
-  checkout, then remove the worktree and branch. The target is `origin/HEAD`, or
-  without a remote a local `main`, else `master`; it never falls back to
-  whatever happens to be checked out. It refuses, leaving the worktree
-  untouched, when the main checkout is not on that branch; on a failed merge
-  (conflict, or local changes in the way) it aborts the merge, keeps the
-  worktree, and reports git's output (e.g. the conflicting files). It **never pushes** — on a project with a remote, push the
-  default branch yourself. As with the PR merge action, Task Detail then marks
-  the task completed and returns to the board. See `mergeLocally` in
+- **Merge without PR:** for work that needs no review, and for projects without
+  a remote. The target is `origin/HEAD`, or without a remote a local `main`,
+  else `master`; it never falls back to whatever happens to be checked out. It
+  refuses, leaving the worktree untouched, when the main checkout is not on that
+  branch. Then:
+  1. **Sync** (only with an `origin` remote): `git fetch origin <default>` and
+     fast-forward the local default branch to it, so the push in step 4 isn't
+     rejected because PRs were merged on GitHub meanwhile. If local and remote
+     have diverged, it refuses before changing anything. A failed fetch
+     (offline) is not fatal; the push then reports the problem.
+  2. **Commit** any uncommitted worktree changes (message = task title),
+     skipped when the session already committed everything.
+  3. **Merge** with `git merge --no-ff` in the main checkout. On a failed merge
+     (conflict, or local changes in the way) it aborts, keeps the worktree, and
+     reports git's output (e.g. the conflicting files).
+  4. **Push** the default branch to `origin` when there is one. A push failure
+     does not undo the merge: the result reports `pushed: false` with git's
+     message, and Task Detail shows it so the human can push by hand.
+  5. **Clean up**: remove the worktree and branch.
+
+  As with the PR merge action, Task Detail then marks the task completed and
+  returns to the board. See `mergeLocally` in
   [`reference/server/services/worktree.ts`](../reference/server/services/worktree.ts).
 
 ## How the document becomes agent context
@@ -129,9 +139,10 @@ path in the prompt is authoritative — agents are told not to look elsewhere.
 - [ ] Task create: insert row → create worktree (roll back the row on failure) →
       seed the doc with the original request.
 - [ ] Task delete: remove worktree + branch → delete the archive.
-- [ ] Local merge: commit worktree changes → merge into the default branch in
-      the main checkout (abort on failure, keep the worktree) → remove worktree +
-      branch; no push.
+- [ ] Merge without PR: fast-forward the default branch from `origin` → commit
+      worktree changes → merge into the default branch in the main checkout
+      (abort on failure, keep the worktree) → push the default branch when there
+      is a remote (failure reported, merge kept) → remove worktree + branch.
 - [ ] `buildContextPrompt` assembling the agent's task context.
 - [ ] Effective-cwd resolution (worktree if present, else repo).
 

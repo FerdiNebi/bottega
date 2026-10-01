@@ -201,25 +201,81 @@ describe('Worktree Service', () => {
     };
     const calls = () => mockRunCommand.mock.calls.map((c) => (c[1] as string[]).join(' '));
 
-    it('commits the worktree, merges into the default branch, then removes the worktree', async () => {
+    it('syncs from origin, commits, merges, pushes, then removes the worktree', async () => {
       dispatch(() => undefined);
 
       const result = await mergeLocally('/repo', 12, 'Create ARD');
 
-      expect(result).toEqual({ success: true, branch: 'task/12-create-ard', defaultBranch: 'main' });
+      expect(result).toEqual({
+        success: true,
+        branch: 'task/12-create-ard',
+        defaultBranch: 'main',
+        pushed: true,
+      });
       const log = calls();
-      const commitAt = log.indexOf('commit -m Create ARD');
-      const mergeAt = log.indexOf('merge --no-ff -m Merge task/12-create-ard task/12-create-ard');
-      const removeAt = log.findIndex((c) => c.startsWith('worktree remove'));
-      expect(commitAt).toBeGreaterThanOrEqual(0);
-      expect(mergeAt).toBeGreaterThan(commitAt);
-      expect(removeAt).toBeGreaterThan(mergeAt);
+      const order = [
+        log.indexOf('fetch --quiet origin main'),
+        log.indexOf('merge --ff-only origin/main'),
+        log.indexOf('commit -m Create ARD'),
+        log.indexOf('merge --no-ff -m Merge task/12-create-ard task/12-create-ard'),
+        log.indexOf('push origin main'),
+        log.findIndex((c) => c.startsWith('worktree remove')),
+      ];
+      expect(order.every((i) => i >= 0)).toBe(true);
+      expect([...order].sort((a, b) => a - b)).toEqual(order);
       expect(mockRunCommand).toHaveBeenCalledWith(
         'git',
         ['merge', '--no-ff', '-m', 'Merge task/12-create-ard', 'task/12-create-ard'],
         { cwd: '/repo' },
       );
-      expect(log).not.toContainEqual(expect.stringMatching(/^push/));
+    });
+
+    it('merges locally without fetching or pushing when there is no origin remote', async () => {
+      dispatch((args) =>
+        args[0] === 'remote' ? Promise.reject(new Error('No such remote')) : undefined,
+      );
+
+      const result = await mergeLocally('/repo', 12, 'Create ARD');
+
+      expect(result).toMatchObject({ success: true, pushed: false });
+      expect(result.pushError).toBeUndefined();
+      expect(calls().some((c) => c.startsWith('fetch') || c.startsWith('push'))).toBe(false);
+    });
+
+    it('refuses before committing when local and origin have diverged', async () => {
+      dispatch((args) =>
+        args[0] === 'merge' && args[1] === '--ff-only'
+          ? Promise.reject(new Error('fatal: Not possible to fast-forward, aborting.'))
+          : undefined,
+      );
+
+      const result = await mergeLocally('/repo', 12, 'Create ARD');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/Could not update local main from origin\/main[\s\S]*Not possible to fast-forward/);
+      expect(calls().some((c) => c.startsWith('commit') || c.startsWith('merge --no-ff'))).toBe(false);
+    });
+
+    it('still merges when the fetch fails (offline)', async () => {
+      dispatch((args) => (args[0] === 'fetch' ? Promise.reject(new Error('Could not resolve host')) : undefined));
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const result = await mergeLocally('/repo', 12, 'Create ARD');
+
+      expect(result.success).toBe(true);
+      expect(calls().some((c) => c.startsWith('merge --ff-only'))).toBe(false);
+    });
+
+    it('keeps the merge and reports the error when the push fails', async () => {
+      dispatch((args) =>
+        args[0] === 'push' ? Promise.reject(new Error('! [rejected] main -> main (fetch first)')) : undefined,
+      );
+
+      const result = await mergeLocally('/repo', 12, 'Create ARD');
+
+      expect(result).toMatchObject({ success: true, pushed: false });
+      expect(result.pushError).toMatch(/rejected/);
+      expect(calls().some((c) => c.startsWith('worktree remove'))).toBe(true);
     });
 
     it('refuses without committing when the main checkout is not on the default branch', async () => {

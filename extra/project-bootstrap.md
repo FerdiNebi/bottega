@@ -54,10 +54,12 @@ edits by typing, and — for sessions 1 and 2 — opens the PR from Task Detail'
 existing **Create PR** action (commit → push → `gh pr create`; see
 `createOrUpdatePR` in
 [`../reference/server/services/prService.ts`](../reference/server/services/prService.ts)).
-On a project without a remote, Task Detail's **Merge without PR** merges the
-session branch into the local default branch instead (see the local merge in
-[`../core/task-and-workspace.md`](../core/task-and-workspace.md)); the status
-check then reads the local branch and reports it as possibly stale.
+Alternatively, Task Detail's **Merge without PR** merges the session branch into
+the default branch without review and pushes it when the project has a remote
+(see [`../core/task-and-workspace.md`](../core/task-and-workspace.md)), so the
+status check sees the document on `origin/<default>` right away. Without a
+remote it merges locally only, and the status check reads the local branch and
+reports it as possibly stale.
 
 ### Why the instructions live in the first message
 

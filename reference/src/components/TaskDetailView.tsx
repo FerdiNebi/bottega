@@ -488,7 +488,7 @@ Please:
 
   const handleMergeWithoutPR = async () => {
     if (!task?.id) return;
-    if (!confirm('Merge without PR? This commits any uncommitted changes, merges this branch into your local default branch (nothing is pushed), deletes the worktree, marks the task as completed, and returns to the project dashboard. Continue?')) {
+    if (!confirm('Merge without PR? This commits any uncommitted changes, merges this branch into the default branch, pushes it to GitHub if the project has a remote, deletes the worktree, marks the task as completed, and returns to the project dashboard. Continue?')) {
       return;
     }
     setIsDiscarding(true);
@@ -499,6 +499,12 @@ Please:
       if (response.ok && data.success) {
         setWorktreeStatus(null);
         setPrStatus(null);
+        if (data.pushError) {
+          // The merge is done and kept; only the push needs a manual retry.
+          alert(
+            `Merged into ${data.defaultBranch}, but pushing it failed. Run "git push origin ${data.defaultBranch}" in the project folder.\n\n${data.pushError}`,
+          );
+        }
         if (onStatusChange) {
           await onStatusChange(task.id, 'completed');
         }
@@ -807,7 +813,7 @@ Please:
                     onClick={handleMergeWithoutPR}
                     disabled={isDiscarding}
                     className="h-7 text-xs"
-                    title="Commit, merge into the local default branch, and remove the worktree (no push)"
+                    title="Commit, merge into the default branch, push it if there is a remote, and remove the worktree"
                   >
                     {isDiscarding ? (
                       <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5" />
