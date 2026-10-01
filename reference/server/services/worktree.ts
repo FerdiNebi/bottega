@@ -648,6 +648,115 @@ export async function commitAllChanges(
   }
 }
 
+/**
+ * The branch a local merge targets. Unlike getDefaultBranch, never falls back
+ * to whatever the main checkout has checked out — that would make the
+ * "main checkout must be on the default branch" guard meaningless.
+ */
+async function getMergeTargetBranch(repoPath: string): Promise<string | null> {
+  try {
+    const { stdout } = await runCommand('git', ['symbolic-ref', 'refs/remotes/origin/HEAD'], {
+      cwd: repoPath,
+    });
+    return stdout.trim().replace('refs/remotes/origin/', '');
+  } catch {
+    // No remote HEAD — look for a conventional local default branch.
+  }
+  for (const candidate of ['main', 'master']) {
+    if (await localBranchExists(repoPath, candidate)) return candidate;
+  }
+  return null;
+}
+
+export interface MergeLocallyResult {
+  success: boolean;
+  branch?: string;
+  defaultBranch?: string;
+  error?: string;
+}
+
+/**
+ * "Merge without PR": commit any uncommitted worktree changes, merge the task
+ * branch into the default branch in the main checkout, then remove the
+ * worktree and branch. Never pushes. The worktree is kept whenever the merge
+ * does not happen, so no work is lost.
+ */
+export async function mergeLocally(
+  repoPath: string,
+  taskId: number,
+  commitMessage: string,
+): Promise<MergeLocallyResult> {
+  const worktreePath = getWorktreePath(repoPath, taskId);
+
+  try {
+    const branch = await getBranchName(worktreePath);
+    if (!branch) {
+      return { success: false, error: 'Could not determine worktree branch' };
+    }
+    assertValidBranchName(branch);
+    const target = await getMergeTargetBranch(repoPath);
+    if (!target) {
+      return {
+        success: false,
+        error: 'Could not determine the default branch: no origin/HEAD and no local main or master branch.',
+      };
+    }
+    const defaultBranch = assertValidBranchName(target, 'default branch');
+
+    const checkedOut = await getBranchName(repoPath);
+    if (checkedOut !== defaultBranch) {
+      return {
+        success: false,
+        error: `The main checkout must be on ${defaultBranch} to merge (it is on ${checkedOut || 'a detached HEAD'}). Check out ${defaultBranch} in ${repoPath} and try again.`,
+      };
+    }
+
+    // Check first: git reports "nothing to commit" on stdout, which the
+    // failed-command error does not carry (same guard as createOrUpdatePR).
+    const changes = await hasUncommittedChanges(repoPath, taskId);
+    if (!changes.success) {
+      return { success: false, error: `Failed to read worktree status: ${changes.error}` };
+    }
+    if (changes.hasChanges) {
+      const commit = await commitAllChanges(repoPath, taskId, commitMessage);
+      if (!commit.success) {
+        return { success: false, error: `Failed to commit worktree changes: ${commit.error}` };
+      }
+    }
+
+    try {
+      await runCommand('git', ['merge', '--no-ff', '-m', `Merge ${branch}`, branch], {
+        cwd: repoPath,
+      });
+    } catch (mergeError) {
+      // Leave the main checkout as it was. Fails harmlessly when no merge is in
+      // progress (e.g. git refused up front because local changes were in the way).
+      await runCommand('git', ['merge', '--abort'], { cwd: repoPath }).catch(() => {});
+      // git reports conflicts ("CONFLICT (content): …") on stdout, which the
+      // failed-command message does not include.
+      const stdout = (mergeError as { stdout?: string }).stdout?.trim();
+      const message = stdout || (mergeError instanceof Error ? mergeError.message : String(mergeError));
+      return {
+        success: false,
+        error: `Merging ${branch} into ${defaultBranch} failed; the worktree was kept. ${message}`,
+      };
+    }
+
+    const removed = await removeWorktree(repoPath, taskId);
+    if (!removed.success) {
+      return {
+        success: false,
+        error: `Merged into ${defaultBranch}, but removing the worktree failed: ${removed.error}`,
+      };
+    }
+
+    return { success: true, branch, defaultBranch };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { success: false, error: message };
+  }
+}
+
 export interface PushChangesResult {
   success: boolean;
   message?: string;

@@ -51,6 +51,7 @@ import {
   createPullRequest,
   getPullRequestStatus,
   mergeAndCleanup,
+  mergeLocally,
   hasUncommittedChanges,
   commitAllChanges,
   pushChanges,
@@ -179,6 +180,95 @@ describe('Worktree Service', () => {
       });
 
       expect(await getBranchName('/path/to/worktree')).toBeNull();
+    });
+  });
+
+  describe('mergeLocally', () => {
+    // Main checkout on `main`, worktree on its task branch, no remote.
+    const dispatch = (overrides: (args: RunArgs, cwd: string) => Promise<{ stdout: string; stderr: string }> | undefined) => {
+      mockRunCommand.mockImplementation((_cmd: string, args: RunArgs, opts?: { cwd?: string }) => {
+        const cwd = opts?.cwd ?? '';
+        const custom = overrides(args, cwd);
+        if (custom) return custom;
+        if (args[0] === 'branch' && args[1] === '--show-current') {
+          return Promise.resolve({ stdout: cwd.includes('worktrees') ? 'task/12-create-ard\n' : 'main\n', stderr: '' });
+        }
+        if (args[0] === 'symbolic-ref') return Promise.reject(new Error('no origin'));
+        if (args[0] === 'status') return Promise.resolve({ stdout: ' M ARD.md\n', stderr: '' });
+        // `rev-parse --verify refs/heads/main` succeeds: a local main exists.
+        return Promise.resolve({ stdout: '', stderr: '' });
+      });
+    };
+    const calls = () => mockRunCommand.mock.calls.map((c) => (c[1] as string[]).join(' '));
+
+    it('commits the worktree, merges into the default branch, then removes the worktree', async () => {
+      dispatch(() => undefined);
+
+      const result = await mergeLocally('/repo', 12, 'Create ARD');
+
+      expect(result).toEqual({ success: true, branch: 'task/12-create-ard', defaultBranch: 'main' });
+      const log = calls();
+      const commitAt = log.indexOf('commit -m Create ARD');
+      const mergeAt = log.indexOf('merge --no-ff -m Merge task/12-create-ard task/12-create-ard');
+      const removeAt = log.findIndex((c) => c.startsWith('worktree remove'));
+      expect(commitAt).toBeGreaterThanOrEqual(0);
+      expect(mergeAt).toBeGreaterThan(commitAt);
+      expect(removeAt).toBeGreaterThan(mergeAt);
+      expect(mockRunCommand).toHaveBeenCalledWith(
+        'git',
+        ['merge', '--no-ff', '-m', 'Merge task/12-create-ard', 'task/12-create-ard'],
+        { cwd: '/repo' },
+      );
+      expect(log).not.toContainEqual(expect.stringMatching(/^push/));
+    });
+
+    it('refuses without committing when the main checkout is not on the default branch', async () => {
+      dispatch((args, cwd) =>
+        args[1] === '--show-current' && !cwd.includes('worktrees')
+          ? Promise.resolve({ stdout: 'feature/x\n', stderr: '' })
+          : undefined,
+      );
+
+      const result = await mergeLocally('/repo', 12, 'Create ARD');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/must be on main/);
+      expect(calls().some((c) => c.startsWith('commit') || c.startsWith('merge'))).toBe(false);
+    });
+
+    it('skips the commit when the session already committed everything', async () => {
+      dispatch((args) => (args[0] === 'status' ? Promise.resolve({ stdout: '', stderr: '' }) : undefined));
+
+      const result = await mergeLocally('/repo', 12, 'Create ARD');
+
+      expect(result.success).toBe(true);
+      expect(calls().some((c) => c.startsWith('commit'))).toBe(false);
+      expect(calls()).toContain('merge --no-ff -m Merge task/12-create-ard task/12-create-ard');
+    });
+
+    it('refuses when there is no origin/HEAD and no local main or master', async () => {
+      dispatch((args) =>
+        args[0] === 'rev-parse' && args[1] === '--verify' ? Promise.reject(new Error('missing')) : undefined,
+      );
+
+      const result = await mergeLocally('/repo', 12, 'Create ARD');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/Could not determine the default branch/);
+      expect(calls().some((c) => c.startsWith('merge'))).toBe(false);
+    });
+
+    it('aborts a failed merge and keeps the worktree', async () => {
+      dispatch((args) =>
+        args[0] === 'merge' && args[1] === '--no-ff' ? Promise.reject(new Error('CONFLICT (content)')) : undefined,
+      );
+
+      const result = await mergeLocally('/repo', 12, 'Create ARD');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/failed; the worktree was kept\. CONFLICT/);
+      expect(calls()).toContain('merge --abort');
+      expect(calls().some((c) => c.startsWith('worktree remove'))).toBe(false);
     });
   });
 

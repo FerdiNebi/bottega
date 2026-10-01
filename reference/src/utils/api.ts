@@ -55,6 +55,7 @@ import type {
   UpdateTaskRequest,
   UpdateTaskResponse,
   DeleteTaskResponse,
+  MergeLocallyResponse,
   GetTaskDocResponse,
   UpdateTaskDocRequest,
   UpdateTaskDocResponse,
@@ -477,6 +478,8 @@ export const api = {
         `/api/tasks/${id}/worktree${force ? '?force=true' : ''}`,
         { method: 'DELETE' }
       ),
+    mergeLocally: (id: number): TypedFetch<MergeLocallyResponse> =>
+      authenticatedFetch<MergeLocallyResponse>(`/api/tasks/${id}/merge-local`, { method: 'POST' }),
     pushChanges: (id: number, commitMessage?: string): TypedFetch<PushChangesResponse> => {
       const body: PushChangesRequest = { commitMessage };
       return authenticatedFetch<PushChangesResponse>(`/api/tasks/${id}/push-changes`, {

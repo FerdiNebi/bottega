@@ -86,6 +86,7 @@ vi.mock('../services/worktree.js', () => ({
   createPullRequest: vi.fn(),
   getPullRequestStatus: vi.fn(),
   mergeAndCleanup: vi.fn(),
+  mergeLocally: vi.fn(),
   hasUncommittedChanges: vi.fn(),
   commitAllChanges: vi.fn(),
   pushChanges: vi.fn()
@@ -117,6 +118,7 @@ import {
   createPullRequest,
   getPullRequestStatus,
   mergeAndCleanup,
+  mergeLocally,
   hasUncommittedChanges,
   commitAllChanges,
   pushChanges
@@ -1267,6 +1269,79 @@ describe('Tasks Routes - Phase 3', () => {
       const response = await request(app).get('/api/tasks/999/pull-request');
 
       expect(response.status).toBe(404);
+    });
+  });
+
+  describe('POST /api/tasks/:id/merge-local', () => {
+    const mockTaskWithProject = {
+      id: 1,
+      project_id: 1,
+      title: 'Create ARD',
+      repo_folder_path: '/path/to/repo',
+    };
+
+    it('merges locally with the task title as the commit message', async () => {
+      vi.mocked(tasksDb.getWithProject).mockReturnValue(mockTaskWithProject as never);
+      vi.mocked(worktreeExists).mockResolvedValue(true);
+      vi.mocked(getProject).mockReturnValue({ id: 1, active_worktree_task_id: null } as never);
+      vi.mocked(mergeLocally).mockResolvedValue({
+        success: true,
+        branch: 'task/1-create-ard',
+        defaultBranch: 'main',
+      });
+
+      const response = await request(app).post('/api/tasks/1/merge-local');
+
+      expect(response.status).toBe(200);
+      expect(mergeLocally).toHaveBeenCalledWith('/path/to/repo', 1, 'Create ARD');
+      expect(response.body).toEqual({ success: true, branch: 'task/1-create-ard', defaultBranch: 'main' });
+      expect(switchWorktree).not.toHaveBeenCalled();
+    });
+
+    it('switches the web server back when this task was being served', async () => {
+      vi.mocked(tasksDb.getWithProject).mockReturnValue(mockTaskWithProject as never);
+      vi.mocked(worktreeExists).mockResolvedValue(true);
+      vi.mocked(getProject).mockReturnValue({
+        id: 1,
+        active_worktree_task_id: 1,
+        serve_symlink_path: '/var/www/app',
+      } as never);
+      vi.mocked(mergeLocally).mockResolvedValue({ success: true, branch: 'b', defaultBranch: 'main' });
+      vi.mocked(switchWorktree).mockResolvedValue({ success: true });
+
+      const response = await request(app).post('/api/tasks/1/merge-local');
+
+      expect(switchWorktree).toHaveBeenCalledWith(1, null, testUserId);
+      expect(response.body.serverSwitched).toBe(true);
+    });
+
+    it('returns 409 with the reason when the merge does not happen', async () => {
+      vi.mocked(tasksDb.getWithProject).mockReturnValue(mockTaskWithProject as never);
+      vi.mocked(worktreeExists).mockResolvedValue(true);
+      vi.mocked(getProject).mockReturnValue({ id: 1 } as never);
+      vi.mocked(mergeLocally).mockResolvedValue({
+        success: false,
+        error: 'Merging task/1-create-ard into main failed; the worktree was kept.',
+      });
+
+      const response = await request(app).post('/api/tasks/1/merge-local');
+
+      expect(response.status).toBe(409);
+      expect(response.body).toEqual({
+        success: false,
+        error: 'Merging task/1-create-ard into main failed; the worktree was kept.',
+      });
+    });
+
+    it('returns 404 when there is no worktree or no access', async () => {
+      vi.mocked(tasksDb.getWithProject).mockReturnValue(mockTaskWithProject as never);
+      vi.mocked(worktreeExists).mockResolvedValue(false);
+      expect((await request(app).post('/api/tasks/1/merge-local')).status).toBe(404);
+
+      vi.mocked(worktreeExists).mockResolvedValue(true);
+      vi.mocked(hasProjectAccess).mockReturnValue(false);
+      expect((await request(app).post('/api/tasks/1/merge-local')).status).toBe(404);
+      expect(mergeLocally).not.toHaveBeenCalled();
     });
   });
 

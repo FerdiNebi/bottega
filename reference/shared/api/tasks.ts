@@ -182,6 +182,21 @@ export interface DiscardWorktreeConflictResponse {
   hasChanges: true;
 }
 
+// `POST /api/tasks/:id/merge-local` ("Merge without PR") — commit the
+// worktree, merge its branch into the local default branch, remove the
+// worktree. Never pushes. Server-switch fields as on task delete.
+export type MergeLocallyResponse =
+  | {
+      success: true;
+      branch: string;
+      defaultBranch: string;
+      serverSwitched?: boolean;
+      serverSwitchMessage?: string;
+      serverSwitchWarning?: string;
+      serverSwitchError?: string;
+    }
+  | { success: false; error: string };
+
 // ---- Pull request --------------------------------------------------------
 
 export interface CreatePRRequest {

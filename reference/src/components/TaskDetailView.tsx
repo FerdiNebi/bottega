@@ -488,43 +488,25 @@ Please:
 
   const handleMergeWithoutPR = async () => {
     if (!task?.id) return;
-    if (!confirm('Merge without PR? This will clean up the worktree and the task will continue using the main repo.')) {
+    if (!confirm('Merge without PR? This commits any uncommitted changes, merges this branch into your local default branch (nothing is pushed), deletes the worktree, marks the task as completed, and returns to the project dashboard. Continue?')) {
       return;
     }
     setIsDiscarding(true);
     setWorktreeError(null);
     try {
-      // First try without force to check for uncommitted changes
-      const response = await api.tasks.discardWorktree(task.id);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setWorktreeStatus(null);
-          setPrStatus(null);
-        } else {
-          setWorktreeError((data as { error?: string }).error || 'Failed to merge without PR');
+      const response = await api.tasks.mergeLocally(task.id);
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setWorktreeStatus(null);
+        setPrStatus(null);
+        if (onStatusChange) {
+          await onStatusChange(task.id, 'completed');
         }
-      } else if (response.status === 409) {
-        // Has uncommitted changes - ask for confirmation
-        const data = await response.json() as { hasChanges?: boolean };
-        if (data.hasChanges) {
-          if (confirm('This worktree has uncommitted changes that will be lost. Continue anyway?')) {
-            const forceResponse = await api.tasks.discardWorktree(task.id, true);
-            if (forceResponse.ok) {
-              const forceData = await forceResponse.json();
-              if (forceData.success) {
-                setWorktreeStatus(null);
-                setPrStatus(null);
-              } else {
-                setWorktreeError((forceData as { error?: string }).error || 'Failed to merge without PR');
-              }
-            } else {
-              setWorktreeError('Failed to merge without PR');
-            }
-          }
+        if (onBack) {
+          onBack();
         }
       } else {
-        setWorktreeError('Failed to merge without PR');
+        setWorktreeError((data as { error?: string }).error || 'Failed to merge without PR');
       }
     } catch (err) {
       setWorktreeError((err as Error).message);
@@ -818,24 +800,22 @@ Please:
                     )}
                     Create PR
                   </Button>
-                  {/* Merge without PR button - only when no commits to push */}
-                  {worktreeStatus.ahead === 0 && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleMergeWithoutPR}
-                      disabled={isDiscarding}
-                      className="h-7 text-xs"
-                      title="Clean up worktree without creating a PR"
-                    >
-                      {isDiscarding ? (
-                        <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5" />
-                      ) : (
-                        <GitMerge className="w-3.5 h-3.5 mr-1.5" />
-                      )}
-                      Merge without PR
-                    </Button>
-                  )}
+                  {/* Merge without PR: commit + merge into the local default branch */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleMergeWithoutPR}
+                    disabled={isDiscarding}
+                    className="h-7 text-xs"
+                    title="Commit, merge into the local default branch, and remove the worktree (no push)"
+                  >
+                    {isDiscarding ? (
+                      <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5" />
+                    ) : (
+                      <GitMerge className="w-3.5 h-3.5 mr-1.5" />
+                    )}
+                    Merge without PR
+                  </Button>
                 </>
               ) : (
                 <>
