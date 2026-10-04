@@ -146,8 +146,10 @@ remote. Then:
   CI, and the review agent's full-suite run is the test gate) **and** it is
   `MERGEABLE`. Anything else (CI `failed`, `pending` or `unknown`, a conflict,
   mergeability still unknown) stops autopilot with the reason.
-- **The PR is already merged** (someone merged it by hand): just remove the
-  worktree.
+- **The PR is already merged** (someone merged it by hand, or an earlier finish
+  merged it but its cleanup failed): `mergeAndCleanup` skips the merge and
+  just cleans up. Cleanup warnings are noted in the message but don't stop
+  autopilot: the work is on the default branch.
 - **No PR** (no remote, or the PR agent found nothing to submit): merge locally
   with `mergeLocally`, the "Merge without PR" path from
   [`core/task-and-workspace.md`](../core/task-and-workspace.md). It pushes the

@@ -404,6 +404,9 @@ function TaskDetailView({
         if (data.success) {
           setWorktreeStatus(null);
           setPrStatus(null);
+          if (data.cleanupWarning) {
+            alert(`The PR was merged, but cleanup had a problem:\n\n${data.cleanupWarning}`);
+          }
 
           // Update task status to completed
           if (onStatusChange) {

@@ -85,9 +85,17 @@ flips `pending → in_progress` on the first agent activity (see
   its context so parallel tasks don't fight over ports (`getDevServerPort`).
 - **Teardown:** `removeWorktree` (`git worktree remove --force` + delete the
   branch) plus `deleteTaskArchive` (doc + inputs + recording) on task delete.
+  On Windows, git fails with "Filename too long" on deep `node_modules` paths
+  and leaves a half-deleted folder that is no longer a checkout. So when git
+  can't remove the worktree, delete the folder with the runtime's own
+  filesystem API (which handles long paths) and `git worktree prune`. Find the
+  task's branch by name (`task/<id>-…`) from the main repo when the worktree
+  can't say, so the branch is still deleted and its PR still found.
   Merging the PR and cleaning up the worktree afterward is a separate action —
-  see [`pull-request-agent.md`](./pull-request-agent.md). The pipeline never
-  auto-deletes a worktree mid-flight.
+  see [`pull-request-agent.md`](./pull-request-agent.md). Once the PR is merged
+  (or already was), that action succeeds; failing to remove the worktree or
+  pull the default branch afterwards is reported as a cleanup warning, not as a
+  failed merge. The pipeline never auto-deletes a worktree mid-flight.
 - **Merge without PR:** for work that needs no review, and for projects without
   a remote. The target is `origin/HEAD`, or without a remote a local `main`,
   else `master`; it never falls back to whatever happens to be checked out. It

@@ -291,6 +291,25 @@ export interface RemoveWorktreeResult {
 /**
  * Remove a worktree and its branch
  */
+/**
+ * `git worktree remove --force`, falling back to deleting the folder and
+ * pruning git's registration when git can't delete it — on Windows, git
+ * fails with "Filename too long" on deep node_modules paths, while Node's fs
+ * handles long paths. Either way uncommitted changes are discarded, as with
+ * `--force`.
+ */
+async function deleteWorktreeDir(repoPath: string, worktreePath: string): Promise<void> {
+  try {
+    await runCommand('git', ['worktree', 'remove', worktreePath, '--force'], { cwd: repoPath });
+    return;
+  } catch (error) {
+    if (!fs.existsSync(worktreePath)) throw error;
+    console.warn(`[worktree] git could not remove ${worktreePath}, deleting it directly: ${gitErrorText(error)}`);
+  }
+  await fs.promises.rm(worktreePath, { recursive: true, force: true, maxRetries: 3 });
+  await runCommand('git', ['worktree', 'prune'], { cwd: repoPath });
+}
+
 export async function removeWorktree(
   repoPath: string,
   taskId: number,
@@ -298,9 +317,9 @@ export async function removeWorktree(
   const worktreePath = getWorktreePath(repoPath, taskId);
 
   try {
-    const branch = await getBranchName(worktreePath);
+    const branch = await getTaskBranch(repoPath, taskId);
 
-    await runCommand('git', ['worktree', 'remove', worktreePath, '--force'], { cwd: repoPath });
+    await deleteWorktreeDir(repoPath, worktreePath);
 
     if (branch) {
       try {
@@ -463,19 +482,41 @@ export interface PullRequestStatusResult {
 }
 
 /**
- * Get the status of a pull request for a task's worktree branch
+ * The task's branch: what its worktree has checked out, else the local
+ * `task/<id>-…` branch. The fallback matters when the worktree folder is
+ * gone or is no longer a checkout (a half-finished cleanup on Windows).
+ */
+export async function getTaskBranch(repoPath: string, taskId: number): Promise<string | null> {
+  const fromWorktree = await getBranchName(getWorktreePath(repoPath, taskId));
+  if (fromWorktree) return fromWorktree;
+  try {
+    const { stdout } = await runCommand(
+      'git',
+      ['branch', '--list', '--format=%(refname:short)', `task/${taskId}-*`],
+      { cwd: repoPath },
+    );
+    return stdout.split('\n').map((line) => line.trim()).find(Boolean) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the status of a task branch's pull request. Looked up by branch name
+ * from the main repo, so it works even when the worktree is gone.
  */
 export async function getPullRequestStatus(
   repoPath: string,
   taskId: number,
 ): Promise<PullRequestStatusResult> {
-  const worktreePath = getWorktreePath(repoPath, taskId);
+  const branch = await getTaskBranch(repoPath, taskId);
+  if (!branch) return { success: true, exists: false };
 
   try {
     const { stdout } = await runCommand(
       'gh',
-      ['pr', 'view', '--json', 'url,state,mergeable'],
-      { cwd: worktreePath },
+      ['pr', 'view', assertValidBranchName(branch), '--json', 'url,state,mergeable'],
+      { cwd: repoPath },
     );
     const prData = JSON.parse(stdout) as { url: string; state: string; mergeable: string };
 
@@ -483,8 +524,8 @@ export async function getPullRequestStatus(
     try {
       const { stdout: checksOutput } = await runCommand(
         'gh',
-        ['pr', 'checks', '--json', 'bucket,name,state,link'],
-        { cwd: worktreePath },
+        ['pr', 'checks', branch, '--json', 'bucket,name,state,link'],
+        { cwd: repoPath },
       );
       const checks = JSON.parse(checksOutput) as CICheck[];
 
@@ -523,78 +564,94 @@ export async function getPullRequestStatus(
   }
 }
 
+export interface MergeAndCleanupResult extends RemoveWorktreeResult {
+  /** The PR is merged, but removing the worktree or updating the default branch failed. */
+  cleanupWarning?: string;
+}
+
 /**
- * Merge a pull request and clean up the worktree and branch
+ * Merge a task's pull request (unless it is already merged), then remove the
+ * worktree and branch and pull the default branch. Once the PR is merged the
+ * result is a success: cleanup problems come back as `cleanupWarning`.
  */
 export async function mergeAndCleanup(
   repoPath: string,
   taskId: number,
-): Promise<RemoveWorktreeResult> {
+): Promise<MergeAndCleanupResult> {
   const worktreePath = getWorktreePath(repoPath, taskId);
+  let branch: string;
+  let mainBranch: string;
 
   try {
-    const branch = await getBranchName(worktreePath);
-    const mainBranch = assertValidBranchName(await getDefaultBranch(repoPath), 'default branch');
-
-    let merged = false;
-    let lastMergeError: Error | null = null;
-    for (let mergeAttempt = 0; mergeAttempt < 3 && !merged; mergeAttempt++) {
-      try {
-        await runCommand('gh', ['pr', 'merge', '--merge'], { cwd: worktreePath });
-        merged = true;
-      } catch (mergeError) {
-        lastMergeError = mergeError instanceof Error ? mergeError : new Error(String(mergeError));
-        const message = lastMergeError.message;
-        const is502 = message.includes('502');
-        const isMergeInProgress = message.includes('Merge already in progress');
-
-        if (is502 || isMergeInProgress) {
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-          try {
-            await runCommand('git', ['fetch', 'origin'], { cwd: worktreePath });
-            const { stdout: branchHead } = await runCommand('git', ['rev-parse', 'HEAD'], {
-              cwd: worktreePath,
-            });
-            const { stdout: mergeCheck } = await runCommand(
-              'git',
-              ['branch', '-r', '--contains', branchHead.trim(), `origin/${mainBranch}`],
-              { cwd: worktreePath },
-            );
-            if (mergeCheck.trim().length > 0) {
-              merged = true;
-            }
-          } catch {
-            /* will retry merge */
-          }
-        } else {
-          break;
-        }
-      }
+    const taskBranch = await getTaskBranch(repoPath, taskId);
+    if (!taskBranch) {
+      return { success: false, error: `Could not find the branch for task ${taskId}` };
     }
-    if (!merged) {
-      throw lastMergeError ?? new Error('Failed to merge after retries');
+    branch = assertValidBranchName(taskBranch);
+    mainBranch = assertValidBranchName(await getDefaultBranch(repoPath), 'default branch');
+
+    const pr = await getPullRequestStatus(repoPath, taskId);
+    if (!(pr.exists && pr.state === 'MERGED')) {
+      await mergePullRequest(repoPath, branch, mainBranch);
     }
-
-    await runCommand('git', ['worktree', 'remove', worktreePath, '--force'], { cwd: repoPath });
-
-    if (branch) {
-      try {
-        await runCommand('git', ['branch', '-D', assertValidBranchName(branch)], {
-          cwd: repoPath,
-        });
-      } catch {
-        /* ignore */
-      }
-    }
-
-    await runCommand('git', ['checkout', mainBranch], { cwd: repoPath });
-    await runCommand('git', ['pull'], { cwd: repoPath });
-
-    return { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { success: false, error: message };
   }
+
+  const warnings: string[] = [];
+  if (fs.existsSync(worktreePath)) {
+    try {
+      await deleteWorktreeDir(repoPath, worktreePath);
+    } catch (error) {
+      warnings.push(`Could not remove the worktree ${worktreePath}: ${gitErrorText(error)}`);
+    }
+  }
+  try {
+    await runCommand('git', ['branch', '-D', branch], { cwd: repoPath });
+  } catch {
+    /* already gone */
+  }
+  try {
+    await runCommand('git', ['checkout', mainBranch], { cwd: repoPath });
+    await runCommand('git', ['pull'], { cwd: repoPath });
+  } catch (error) {
+    warnings.push(`Could not update local ${mainBranch}: ${gitErrorText(error)}`);
+  }
+
+  return warnings.length ? { success: true, cleanupWarning: warnings.join('\n') } : { success: true };
+}
+
+/** `gh pr merge`, retrying GitHub's transient 502 / "merge in progress". */
+async function mergePullRequest(repoPath: string, branch: string, mainBranch: string): Promise<void> {
+  let lastMergeError: Error | null = null;
+  for (let mergeAttempt = 0; mergeAttempt < 3; mergeAttempt++) {
+    try {
+      await runCommand('gh', ['pr', 'merge', branch, '--merge'], { cwd: repoPath });
+      return;
+    } catch (mergeError) {
+      lastMergeError = mergeError instanceof Error ? mergeError : new Error(String(mergeError));
+      const message = lastMergeError.message;
+      const is502 = message.includes('502');
+      const isMergeInProgress = message.includes('Merge already in progress');
+      if (!is502 && !isMergeInProgress) break;
+
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      try {
+        await runCommand('git', ['fetch', 'origin'], { cwd: repoPath });
+        const { stdout: branchHead } = await runCommand('git', ['rev-parse', branch], { cwd: repoPath });
+        const { stdout: mergeCheck } = await runCommand(
+          'git',
+          ['branch', '-r', '--contains', branchHead.trim(), `origin/${mainBranch}`],
+          { cwd: repoPath },
+        );
+        if (mergeCheck.trim().length > 0) return;
+      } catch {
+        /* will retry merge */
+      }
+    }
+  }
+  throw lastMergeError ?? new Error('Failed to merge after retries');
 }
 
 export interface UncommittedChangesResult {

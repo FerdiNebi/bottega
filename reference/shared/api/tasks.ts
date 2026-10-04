@@ -245,6 +245,8 @@ export type GetPRResponse =
 export type MergeAndCleanupResponse =
   | {
       success: true;
+      // The PR was merged but removing the worktree or pulling the default branch failed.
+      cleanupWarning?: string;
       serverSwitched?: boolean;
       serverSwitchMessage?: string;
       serverSwitchWarning?: string;

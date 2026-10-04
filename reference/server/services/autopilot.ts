@@ -18,7 +18,6 @@ import {
   isGitRepository,
   mergeAndCleanup,
   mergeLocally,
-  removeWorktree,
   resolveBootstrapBase,
   updateWorktreeFromDefault,
   worktreeExists,
@@ -336,7 +335,11 @@ async function finishLocked(taskId: number, ctx: AutopilotContext): Promise<bool
   return true;
 }
 
-type MergeOutcome = { ok: true; note?: string } | { ok: false; reason: string };
+function withWarning(note: string, warning: string | undefined): string {
+  return warning ? `${note}; cleanup warning: ${warning}` : note;
+}
+
+type MergeOutcome ={ ok: true; note?: string } | { ok: false; reason: string };
 
 async function mergeTask(
   repoPath: string,
@@ -350,8 +353,12 @@ async function mergeTask(
     const pr = await getPullRequestStatus(repoPath, task.id);
     if (pr.exists) {
       if (pr.state === 'MERGED') {
-        await removeWorktree(repoPath, task.id);
-        return { ok: true, note: 'the PR was already merged' };
+        // Merged by hand, or an earlier finish merged it but its cleanup
+        // failed: mergeAndCleanup skips the merge and just cleans up.
+        const result = await mergeAndCleanup(repoPath, task.id);
+        return result.success
+          ? { ok: true, note: withWarning('the PR was already merged', result.cleanupWarning) }
+          : { ok: false, reason: `cleaning up after ${pr.url} failed: ${result.error}` };
       }
       if (pr.state !== 'OPEN') {
         return { ok: false, reason: `the PR is ${String(pr.state).toLowerCase()} (${pr.url})` };
@@ -365,7 +372,7 @@ async function mergeTask(
       }
       const result = await mergeAndCleanup(repoPath, task.id);
       return result.success
-        ? { ok: true, note: `merged ${pr.url}` }
+        ? { ok: true, note: withWarning(`merged ${pr.url}`, result.cleanupWarning) }
         : { ok: false, reason: `merging ${pr.url} failed: ${result.error}` };
     }
   }

@@ -2,11 +2,17 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { AgentRunRow, ProjectRow, TaskRow } from '../../shared/types/db.js';
 
 // In-memory stand-ins for the three tables autopilot reads.
-const state = vi.hoisted(() => ({
+interface FakeState {
+  project: ProjectRow;
+  tasks: TaskRow[];
+  runs: AgentRunRow[];
+  docs: Record<number, string>;
+}
+const state = vi.hoisted((): FakeState => ({
   project: null as unknown as ProjectRow,
-  tasks: [] as TaskRow[],
-  runs: [] as AgentRunRow[],
-  docs: {} as Record<number, string>,
+  tasks: [],
+  runs: [],
+  docs: {},
 }));
 
 vi.mock('../database/db.js', () => ({
@@ -250,7 +256,7 @@ describe('startNextAutopilotTask', () => {
     state.tasks = [task(2)];
     vi.mocked(worktreeExists).mockResolvedValue(false);
     vi.mocked(resolveBootstrapBase).mockResolvedValue({ defaultBranch: 'main', baseRef: 'origin/main', stale: false });
-    vi.mocked(createWorktree).mockResolvedValue({ success: true } as never);
+    vi.mocked(createWorktree).mockResolvedValue({ success: true });
 
     await startNextAutopilotTask(1, ctx);
 
@@ -362,6 +368,20 @@ describe('finishing a task (onAutopilotRunCompleted after PR / yolo)', () => {
     expect(state.project.autopilot_message).toMatch(reason);
     await vi.advanceTimersByTimeAsync(1000);
     expect(startAgentRun).not.toHaveBeenCalled();
+  });
+
+  it('finishes a task whose PR is already merged (an earlier cleanup failed)', async () => {
+    state.tasks = [task(1, { status: 'in_progress', pr_agent_complete: 1 }), task(2)];
+    openPr({ state: 'MERGED', mergeable: 'UNKNOWN' });
+    vi.mocked(mergeAndCleanup).mockResolvedValue({ success: true, cleanupWarning: 'Could not update local main' });
+
+    await onAutopilotRunCompleted(1, 'pr', ctx);
+
+    expect(mergeAndCleanup).toHaveBeenCalledWith('/repo', 1);
+    expect(state.tasks[0]!.status).toBe('completed');
+    expect(state.project.autopilot_message).toMatch(/already merged; cleanup warning: Could not update local main/);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(startAgentRun).toHaveBeenCalledWith(2, 'planification', ctx);
   });
 
   it('merges a repository without CI ("none") when the PR is mergeable', async () => {

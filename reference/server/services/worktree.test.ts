@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Use vi.hoisted so `vi.mock` can reach the mock function before module init.
-const { mockRunCommand, mockAccess, mockMkdir, mockSymlink, mockExistsSync } = vi.hoisted(
+const { mockRunCommand, mockAccess, mockMkdir, mockSymlink, mockExistsSync, mockRm } = vi.hoisted(
   () => ({
+    mockRm: vi.fn(),
     mockRunCommand: vi.fn(),
     mockAccess: vi.fn(),
     mockMkdir: vi.fn(),
@@ -27,6 +28,7 @@ vi.mock('fs', () => ({
       access: mockAccess,
       mkdir: mockMkdir,
       symlink: mockSymlink,
+      rm: mockRm,
     },
   },
   existsSync: mockExistsSync,
@@ -34,6 +36,7 @@ vi.mock('fs', () => ({
     access: mockAccess,
     mkdir: mockMkdir,
     symlink: mockSymlink,
+    rm: mockRm,
   },
 }));
 
@@ -747,17 +750,29 @@ describe('Worktree Service', () => {
   });
 
   describe('getPullRequestStatus', () => {
-    it('returns PR status when PR exists', async () => {
-      withDispatch(async () => ({
-        stdout: JSON.stringify({
-          url: 'https://github.com/user/repo/pull/123',
-          state: 'OPEN',
-          mergeable: 'MERGEABLE',
-        }),
-        stderr: '',
-      }));
+    it('returns PR status when PR exists, looked up by branch from the main repo', async () => {
+      mockRunCommand.mockImplementation((_cmd: string, args: RunArgs) => {
+        if (args.includes('--show-current')) return Promise.resolve({ stdout: 'task/10-feature\n', stderr: '' });
+        if (args[1] === 'view') {
+          return Promise.resolve({
+            stdout: JSON.stringify({
+              url: 'https://github.com/user/repo/pull/123',
+              state: 'OPEN',
+              mergeable: 'MERGEABLE',
+            }),
+            stderr: '',
+          });
+        }
+        return Promise.resolve({ stdout: '[]', stderr: '' });
+      });
 
       const result = await getPullRequestStatus('/repo', 10);
+
+      expect(mockRunCommand).toHaveBeenCalledWith(
+        'gh',
+        ['pr', 'view', 'task/10-feature', '--json', 'url,state,mergeable'],
+        { cwd: '/repo' },
+      );
 
       expect(result.success).toBe(true);
       expect(result.exists).toBe(true);
@@ -780,6 +795,7 @@ describe('Worktree Service', () => {
 
   describe('mergeAndCleanup', () => {
     it('merges PR and cleans up worktree', async () => {
+      mockExistsSync.mockReturnValue(true);
       const calls: string[][] = [];
       withDispatch(async (cmd, args) => {
         calls.push([cmd, ...args]);
@@ -791,7 +807,7 @@ describe('Worktree Service', () => {
       const result = await mergeAndCleanup('/repo', 10);
 
       expect(result.success).toBe(true);
-      expect(calls.some((c) => c.join(' ').includes('gh pr merge --merge'))).toBe(true);
+      expect(calls.some((c) => c.join(' ').includes('gh pr merge task/10-feature --merge'))).toBe(true);
       expect(calls.some((c) => c.join(' ').includes('git worktree remove'))).toBe(true);
       expect(calls.some((c) => c.join(' ').includes('git branch -D task/10-feature'))).toBe(true);
       expect(calls.some((c) => c.join(' ').includes('git checkout main'))).toBe(true);
@@ -861,6 +877,84 @@ describe('Worktree Service', () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain('not mergeable');
       expect(mergeCallCount).toBe(1);
+    });
+
+    it('skips the merge when the PR is already merged, and still cleans up', async () => {
+      mockExistsSync.mockReturnValue(true);
+      const calls: string[] = [];
+      withDispatch(async (cmd, args) => {
+        calls.push([cmd, ...args].join(' '));
+        if (args.includes('--show-current')) return { stdout: 'task/10-feature\n', stderr: '' };
+        if (args.includes('symbolic-ref')) return { stdout: 'main\n', stderr: '' };
+        if (cmd === 'gh' && args[1] === 'view') {
+          return { stdout: JSON.stringify({ url: 'u', state: 'MERGED', mergeable: 'UNKNOWN' }), stderr: '' };
+        }
+        return { stdout: '', stderr: '' };
+      });
+
+      const result = await mergeAndCleanup('/repo', 10);
+
+      expect(result).toEqual({ success: true });
+      expect(calls.some((c) => c.startsWith('gh pr merge'))).toBe(false);
+      expect(calls.some((c) => c.startsWith('git worktree remove'))).toBe(true);
+      expect(calls).toContain('git pull');
+    });
+
+    it('deletes the folder itself when git cannot (Windows "Filename too long")', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockRm.mockResolvedValue(undefined);
+      const calls: string[] = [];
+      withDispatch(async (cmd, args) => {
+        calls.push([cmd, ...args].join(' '));
+        if (args.includes('--show-current')) return { stdout: 'task/10-feature\n', stderr: '' };
+        if (args.includes('symbolic-ref')) return { stdout: 'main\n', stderr: '' };
+        if (args[0] === 'worktree' && args[1] === 'remove') {
+          throw new Error('error: failed to delete x: Filename too long');
+        }
+        return { stdout: '', stderr: '' };
+      });
+
+      const result = await mergeAndCleanup('/repo', 10);
+
+      expect(result).toEqual({ success: true });
+      expect(mockRm).toHaveBeenCalledWith(getWorktreePath('/repo', 10), { recursive: true, force: true, maxRetries: 3 });
+      expect(calls).toContain('git worktree prune');
+    });
+
+    it('reports cleanup problems after a merge as a warning, not a failure', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockRm.mockRejectedValue(new Error('EBUSY'));
+      withDispatch(async (cmd, args) => {
+        if (args.includes('--show-current')) return { stdout: 'task/10-feature\n', stderr: '' };
+        if (args.includes('symbolic-ref')) return { stdout: 'main\n', stderr: '' };
+        if (args[0] === 'worktree' && args[1] === 'remove') throw new Error('Filename too long');
+        if (args[0] === 'pull') throw new Error('local changes would be overwritten');
+        return { stdout: '', stderr: '' };
+      });
+
+      const result = await mergeAndCleanup('/repo', 10);
+
+      expect(result.success).toBe(true);
+      expect(result.cleanupWarning).toMatch(/Could not remove the worktree[\s\S]*EBUSY/);
+      expect(result.cleanupWarning).toMatch(/Could not update local main[\s\S]*local changes/);
+    });
+
+    it('finds the task branch from the main repo when the worktree is no longer a checkout', async () => {
+      const calls: string[] = [];
+      withDispatch(async (cmd, args) => {
+        calls.push([cmd, ...args].join(' '));
+        if (args.includes('--show-current')) throw new Error('not a git repository');
+        if (args[0] === 'branch' && args[1] === '--list') return { stdout: 'task/10-feature\n', stderr: '' };
+        if (args.includes('symbolic-ref')) return { stdout: 'main\n', stderr: '' };
+        return { stdout: '', stderr: '' };
+      });
+
+      const result = await mergeAndCleanup('/repo', 10);
+
+      expect(result.success).toBe(true);
+      expect(calls).toContain('git branch --list --format=%(refname:short) task/10-*');
+      expect(calls).toContain('gh pr merge task/10-feature --merge');
+      expect(calls).toContain('git branch -D task/10-feature');
     });
   });
 
