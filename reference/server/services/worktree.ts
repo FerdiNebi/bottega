@@ -679,7 +679,7 @@ export interface MergeLocallyResult {
   error?: string;
 }
 
-async function hasOriginRemote(repoPath: string): Promise<boolean> {
+export async function hasOriginRemote(repoPath: string): Promise<boolean> {
   try {
     await runCommand('git', ['remote', 'get-url', 'origin'], { cwd: repoPath });
     return true;
@@ -694,6 +694,63 @@ function gitErrorText(error: unknown): string {
   const stdout = (error as { stdout?: string }).stdout?.trim();
   const message = error instanceof Error ? error.message : String(error);
   return stdout ? `${message.trim()}\n${stdout}` : message.trim();
+}
+
+export interface UpdateWorktreeResult {
+  success: boolean;
+  /** The ref that was merged into the task branch. */
+  baseRef?: string;
+  error?: string;
+}
+
+/**
+ * Bring a task worktree up to date with the default branch before work starts
+ * on it: merge `origin/<default>` (after a fetch) into the task branch, or the
+ * local default branch when there is no remote or the fetch fails. A failed
+ * merge is aborted so the worktree is left as it was.
+ */
+export async function updateWorktreeFromDefault(
+  repoPath: string,
+  taskId: number,
+): Promise<UpdateWorktreeResult> {
+  const worktreePath = getWorktreePath(repoPath, taskId);
+  const target = await getMergeTargetBranch(repoPath);
+  if (!target) {
+    return {
+      success: false,
+      error: 'Could not determine the default branch (no origin/HEAD, main or master)',
+    };
+  }
+  assertValidBranchName(target, 'default branch');
+
+  let baseRef = target;
+  if (await hasOriginRemote(repoPath)) {
+    try {
+      await runCommand('git', ['fetch', '--quiet', 'origin', target], {
+        cwd: repoPath,
+        timeout: 60_000,
+      });
+      baseRef = `origin/${target}`;
+    } catch (error) {
+      console.warn(`[worktree] git fetch failed in ${repoPath}, merging local ${target}: ${gitErrorText(error)}`);
+    }
+  }
+
+  try {
+    await runCommand('git', ['merge', '--no-edit', baseRef], { cwd: worktreePath });
+    return { success: true, baseRef };
+  } catch (error) {
+    try {
+      await runCommand('git', ['merge', '--abort'], { cwd: worktreePath });
+    } catch {
+      /* nothing to abort (the merge refused to start) */
+    }
+    return {
+      success: false,
+      baseRef,
+      error: `Could not merge ${baseRef} into the task branch: ${gitErrorText(error)}`,
+    };
+  }
 }
 
 /**

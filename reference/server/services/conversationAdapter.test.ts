@@ -73,6 +73,10 @@ vi.mock('../database/db.js', () => ({
   projectMembersDb: {
     isMember: vi.fn().mockReturnValue(true),
   },
+  // Autopilot switch read by the completion handler (off in these tests).
+  projectsDb: {
+    getByIdAdmin: vi.fn(),
+  },
 }));
 
 vi.mock('./projectService.js', () => ({

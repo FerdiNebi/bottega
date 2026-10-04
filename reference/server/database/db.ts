@@ -455,6 +455,14 @@ const runMigrations = (): void => {
       db.exec('ALTER TABLE projects ADD COLUMN app_url TEXT DEFAULT NULL');
     }
 
+    if (!projectColumnNames.includes('autopilot_enabled')) {
+      console.log('Running migration: Adding autopilot columns to projects');
+      db.exec(`
+        ALTER TABLE projects ADD COLUMN autopilot_enabled INTEGER DEFAULT 0 NOT NULL;
+        ALTER TABLE projects ADD COLUMN autopilot_message TEXT DEFAULT NULL;
+      `);
+    }
+
     if (!columnNames.includes('is_admin')) {
       console.log('Running migration: Adding is_admin column to users');
       db.exec('ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0');
@@ -978,6 +986,18 @@ const projectsDb = {
        WHERE id = ?`
     ).run(serveSymlinkPath || null, systemdServiceName || null, appUrl || null, id);
     return projectsDb.getById(id, userId);
+  },
+
+  // Autopilot state is project-wide (not per member), so these take no userId;
+  // routes check access before calling them.
+  setAutopilotEnabled: (id: number, enabled: boolean): void => {
+    db.prepare(
+      'UPDATE projects SET autopilot_enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+    ).run(enabled ? 1 : 0, id);
+  },
+
+  setAutopilotMessage: (id: number, message: string | null): void => {
+    db.prepare('UPDATE projects SET autopilot_message = ? WHERE id = ?').run(message, id);
   },
 };
 

@@ -10,22 +10,28 @@ import { saveConversationUpload } from '../services/documentation.js';
 import { upload } from '../middleware/upload.js';
 import type { ApiError } from '../../shared/api/_common.js';
 import type {
+  AutopilotStatusResponse,
   BootstrapStatusResponse,
   CreateProjectResponse,
   DeleteProjectResponse,
   GetProjectResponse,
   ListProjectsResponse,
+  StartAutopilotResponse,
   StartBootstrapResponse,
   UpdateProjectResponse,
   UploadProjectFileResponse,
 } from '../../shared/api/projects.js';
-import type { BroadcastFn } from '../../shared/websocket/messages.js';
+import type {
+  BroadcastFn,
+  BroadcastToTaskSubscribersFn,
+} from '../../shared/websocket/messages.js';
 import {
   BootstrapRequestError,
   getBootstrapStatus,
   startBootstrapSession,
 } from '../services/projectBootstrap.js';
 import { ProviderCredentialsMissingError } from '../services/credentials/types.js';
+import { getAutopilotStatus, startNextAutopilotTask } from '../services/autopilot.js';
 import type { ProjectUpdates } from '../database/db.js';
 import { validateBody, validateParams } from '../middleware/validate.js';
 import {
@@ -37,6 +43,8 @@ import {
   type BootstrapParams,
   StartBootstrapBodySchema,
   type StartBootstrapBody,
+  SetAutopilotBodySchema,
+  type SetAutopilotBody,
   CreateProjectBodySchema,
   type CreateProjectBody,
   UpdateProjectBodySchema,
@@ -274,17 +282,7 @@ router.post(
         return res.status(error.status).json({ error: error.message });
       }
       if (error instanceof ProviderCredentialsMissingError) {
-        const providerLabel =
-          error.provider === 'openai'
-            ? 'OpenAI'
-            : error.provider === 'opencode'
-              ? 'OpenCode'
-              : 'Claude';
-        return res.status(403).json({
-          error: `${providerLabel} credentials are not provisioned for this user. Connect ${providerLabel} in Settings → Providers.`,
-          code: 'PROVIDER_CREDENTIALS_MISSING',
-          provider: error.provider,
-        } as never);
+        return res.status(403).json(credentialsMissingBody(error));
       }
       console.error('Error starting bootstrap session:', error);
       const message = error instanceof Error ? error.message : String(error);
@@ -292,5 +290,97 @@ router.post(
     }
   },
 );
+
+// ---- Autopilot (extra/autopilot.md) ----------------------------------------
+
+router.get(
+  '/:id/autopilot',
+  validateParams(IdParamsSchema),
+  async (req: Request, res: Response<AutopilotStatusResponse | ApiError>) => {
+    try {
+      const { id: projectId } = req.validated!.params as IdParams;
+      const project = getProject(projectId, req.user!.id);
+      if (!project) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
+      res.json(await getAutopilotStatus(project));
+    } catch (error) {
+      console.error('Error getting autopilot status:', error);
+      res.status(500).json({ error: 'Failed to get autopilot status' });
+    }
+  },
+);
+
+router.put(
+  '/:id/autopilot',
+  validateParams(IdParamsSchema),
+  validateBody(SetAutopilotBodySchema),
+  async (req: Request, res: Response<AutopilotStatusResponse | ApiError>) => {
+    try {
+      const userId = req.user!.id;
+      const { id: projectId } = req.validated!.params as IdParams;
+      const { enabled } = req.validated!.body as SetAutopilotBody;
+      if (!getProject(projectId, userId)) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
+      projectsDb.setAutopilotEnabled(projectId, enabled);
+      projectsDb.setAutopilotMessage(projectId, null);
+      res.json(await getAutopilotStatus(getProject(projectId, userId)!));
+    } catch (error) {
+      console.error('Error updating autopilot:', error);
+      res.status(500).json({ error: 'Failed to update autopilot' });
+    }
+  },
+);
+
+router.post(
+  '/:id/autopilot/start',
+  validateParams(IdParamsSchema),
+  async (req: Request, res: Response<StartAutopilotResponse | ApiError>) => {
+    try {
+      const userId = req.user!.id;
+      const { id: projectId } = req.validated!.params as IdParams;
+      const project = getProject(projectId, userId);
+      if (!project) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
+
+      const broadcastToConversationSubscribers =
+        req.app.locals.broadcastToConversationSubscribers as BroadcastFn | undefined;
+      const result = await startNextAutopilotTask(projectId, {
+        broadcastFn: (convId, msg) => broadcastToConversationSubscribers?.(convId, msg),
+        broadcastToTaskSubscribersFn: req.app.locals.broadcastToTaskSubscribers as
+          | BroadcastToTaskSubscribersFn
+          | undefined,
+        userId,
+      });
+
+      if (result.status === 'started') {
+        return res.json({ taskId: result.taskId, step: result.step });
+      }
+      if (result.status === 'finished') {
+        return res.json({ taskId: result.taskId, step: 'finish' });
+      }
+      res.status(409).json({ error: result.message });
+    } catch (error) {
+      if (error instanceof ProviderCredentialsMissingError) {
+        return res.status(403).json(credentialsMissingBody(error));
+      }
+      console.error('Error starting autopilot:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: `Failed to start autopilot: ${message}` });
+    }
+  },
+);
+
+function credentialsMissingBody(error: ProviderCredentialsMissingError) {
+  const providerLabel =
+    error.provider === 'openai' ? 'OpenAI' : error.provider === 'opencode' ? 'OpenCode' : 'Claude';
+  return {
+    error: `${providerLabel} credentials are not provisioned for this user. Connect ${providerLabel} in Settings → Providers.`,
+    code: 'PROVIDER_CREDENTIALS_MISSING',
+    provider: error.provider,
+  };
+}
 
 export default router;

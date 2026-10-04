@@ -251,5 +251,6 @@ core can hardcode a single harness. The contract that step calls is in
 - How a turn actually streams and persists its transcript →
   [`harness-contract.md`](./harness-contract.md).
 - The refinement step, YOLO single-agent mode, model/effort selection, the
-  non-technical auto-advance, the task-authoring board, and webhook re-trigger →
-  the corresponding `extra/` specs.
+  non-technical auto-advance, the task-authoring board, webhook re-trigger, and
+  autopilot (no gates, auto-merge, next task) → the corresponding `extra/`
+  specs.

@@ -84,6 +84,10 @@ vi.mock('./agentModelSettings.js', () => ({
   })
 }));
 
+vi.mock('./autopilotFlag.js', () => ({
+  isAutopilotProject: vi.fn().mockReturnValue(false),
+}));
+
 import {
   startAgentRun,
   getRunningAgentForTask,
@@ -103,6 +107,7 @@ import {
 import { getWorktreeProjectPath, worktreeExists } from './worktree.js';
 import { validateClaudeCredentials } from './claudeCredentials.js';
 import { loadAgentModelSettings } from './agentModelSettings.js';
+import { isAutopilotProject } from './autopilotFlag.js';
 
 describe('agentRunner', () => {
   const mockTaskWithProject = {
@@ -388,6 +393,26 @@ describe('agentRunner', () => {
           disallowedTools: []
         })
       );
+    });
+
+    it('appends the autopilot section and bans AskUserQuestion on autopilot projects', async () => {
+      vi.mocked(isAutopilotProject).mockReturnValueOnce(true);
+
+      await startAgentRun(1, 'implementation');
+
+      expect(isAutopilotProject).toHaveBeenCalledWith(1);
+      const [, message, options] = vi.mocked(startConversation).mock.calls[0]!;
+      expect(message.startsWith('implementation message\n\n## Autopilot')).toBe(true);
+      expect(message).toContain('/archive/projects/1/tasks/task-1.md');
+      expect(message).toMatch(/## Autopilot decisions/);
+      expect(options).toEqual(expect.objectContaining({ disallowedTools: ['Agent', 'AskUserQuestion'] }));
+    });
+
+    it('leaves the message alone when autopilot is off', async () => {
+      await startAgentRun(1, 'planification');
+
+      const [, message] = vi.mocked(startConversation).mock.calls[0]!;
+      expect(message).toBe('planification message');
     });
 
     it('should return claudeSessionId from adapter', async () => {

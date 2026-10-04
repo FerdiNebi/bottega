@@ -1,4 +1,5 @@
-import { conversationsDb, tasksDb } from '../../database/db.js';
+import { agentRunsDb, conversationsDb, tasksDb } from '../../database/db.js';
+import { isAutopilotProject } from '../autopilotFlag.js';
 import { resolveProjectKey } from '../conversationContentStore.js';
 import { sqliteSessionStore } from '../sqliteSessionStore.js';
 import { pendingAskUserQuestions } from './sessionState.js';
@@ -40,6 +41,17 @@ interface ResolveOptions {
   permissionMode?: PermissionMode | undefined;
 }
 
+export const AUTOPILOT_DENY_MESSAGE =
+  'Autopilot is on: no one will answer. Choose the option you would recommend, ' +
+  'record it under "## Autopilot decisions" in the task doc, and continue.';
+
+function isAutopilotAgentRun(conversationId: ConversationId): boolean {
+  if (!agentRunsDb.getByConversationId(conversationId)) return false;
+  const taskId = conversationsDb.getById(conversationId)?.task_id;
+  const projectId = taskId != null ? tasksDb.getById(taskId)?.project_id : undefined;
+  return projectId != null && isAutopilotProject(projectId);
+}
+
 /**
  * Build a `canUseTool` callback for the SDK. Non-AskUserQuestion tools pass
  * through unchanged so `bypassPermissions` semantics are preserved.
@@ -73,6 +85,16 @@ export function buildCanUseTool({
       return {
         behavior: 'deny',
         message: 'AskUserQuestion is not supported in this context',
+      };
+    }
+
+    // Autopilot extra: agent runs normally have the tool disallowed; this
+    // catches anything that slips through. Manual chats (e.g. the PRD/ARD
+    // interviews) have no agent run and keep asking.
+    if (isAutopilotAgentRun(conversationId)) {
+      return {
+        behavior: 'deny',
+        message: AUTOPILOT_DENY_MESSAGE,
       };
     }
 

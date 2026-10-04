@@ -138,6 +138,12 @@ vi.mock('lucide-react', () => ({
 }));
 
 // Mock BootstrapSessionModal component
+vi.mock('./AutopilotControls', () => ({
+  default: ({ projectId }: { projectId: number }) => (
+    <div data-testid="autopilot-controls">{projectId}</div>
+  ),
+}));
+
 vi.mock('../BootstrapSessionModal', () => ({
   default: ({
     isOpen,

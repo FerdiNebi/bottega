@@ -4,7 +4,7 @@
 //  - /api/projects/:id/web-server*      (mounted via webServer.js)
 //  - /api/projects/:id/files            (inline handler in server/index.js)
 
-import type { ProjectRow } from '../types/db';
+import type { AgentType, ProjectRow } from '../types/db';
 import { expectType } from './_common';
 
 // ---- Project CRUD ---------------------------------------------------------
@@ -174,4 +174,41 @@ export interface StartBootstrapResponse {
   conversationId: number;
   /** The rendered prompt sent as the first user message (shown while streaming). */
   initialMessage: string;
+}
+
+// ---- Autopilot (extra/autopilot.md) -----------------------------------------
+//
+// `GET /api/projects/:id/autopilot` — the switch plus what it would do next.
+// `PUT /api/projects/:id/autopilot` — `{ enabled }`, returns the status.
+// `POST /api/projects/:id/autopilot/start` — start the next ready task; 409
+// with `error` when nothing was started (off, busy, running, nothing ready).
+
+export interface AutopilotTaskRef {
+  taskId: number;
+  title: string | null;
+}
+
+export interface AutopilotStatusResponse {
+  enabled: boolean;
+  isGitRepository: boolean;
+  running: (AutopilotTaskRef & { agentType: AgentType }) | null;
+  /** What Start would pick. */
+  next: AutopilotTaskRef | null;
+  readyCount: number;
+  /** Pending tasks whose dependencies aren't completed. */
+  waitingCount: number;
+  /** Started tasks with `workflow_blocked`. */
+  blockedCount: number;
+  /** The last start/merge/stop message. */
+  message: string | null;
+}
+
+export interface SetAutopilotRequest {
+  enabled: boolean;
+}
+
+export interface StartAutopilotResponse {
+  taskId: number;
+  /** The agent started, or `finish` when the task only needed merging. */
+  step: AgentType | 'finish';
 }

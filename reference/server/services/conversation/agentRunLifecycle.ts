@@ -14,6 +14,7 @@
 
 import { tasksDb, agentRunsDb, userDb } from '../../database/db.js';
 import { worktreeExists } from '../worktree.js';
+import { isAutopilotProject } from '../autopilotFlag.js';
 import { notifyClaudeComplete } from '../notifications.js';
 import type { StreamingContext } from './types.js';
 import type { AgentType } from '@shared/websocket/messages';
@@ -55,11 +56,13 @@ export function buildAgentRunCompletionHandler(
     const linkedAgentRun = agentRuns.find((r) => r.conversation_id === conversationId);
 
     let shouldChain = false;
+    let endedNormally = false;
 
     if (linkedAgentRun) {
       const { id: agentRunId, agent_type: agentType, status } = linkedAgentRun;
 
       if (status === 'running') {
+        endedNormally = true;
         agentRunsDb.updateStatus(agentRunId, 'completed');
         console.log(`[ConversationAdapter] Agent run ${agentRunId} (${agentType}) completed`);
 
@@ -92,11 +95,20 @@ export function buildAgentRunCompletionHandler(
         console.log(
           `[ConversationAdapter] Agent run ${agentRunId} (${agentType}) status='${status}' on stream end — no chain`,
         );
+        if (status === 'failed') {
+          const { onAutopilotLoopStopped } = await import('../autopilot.js');
+          onAutopilotLoopStopped(taskId, `the ${agentType} run was stopped.`);
+        }
       }
     }
 
     if (shouldChain && linkedAgentRun) {
       await handleAgentChaining(taskId, linkedAgentRun.agent_type, ctx);
+    } else if (endedNormally && linkedAgentRun) {
+      // PR and yolo are terminal in core; under autopilot they lead to the
+      // merge and the next task.
+      const { onAutopilotRunCompleted } = await import('../autopilot.js');
+      await onAutopilotRunCompleted(taskId, linkedAgentRun.agent_type, ctx);
     }
 
     // Push notification for any task conversation (manual or agent-run-driven).
@@ -129,6 +141,11 @@ async function handleAgentChaining(
 ): Promise<void> {
   const { broadcastFn, broadcastToTaskSubscribersFn, userId } = context;
   const task = tasksDb.getById(taskId);
+  const autopilot = await import('../autopilot.js');
+  if (await autopilot.onAutopilotRunCompleted(taskId, agentType, context)) {
+    return;
+  }
+  const autopilotOn = !!task && isAutopilotProject(task.project_id);
 
   // Planification → implementation auto-chain for non-technical users.
   // Technical users keep the current manual-Run gate. The decision tracks
@@ -140,7 +157,8 @@ async function handleAgentChaining(
     const actor = actorUserId ? userDb.getUserById(actorUserId) : null;
     const actorIsNonTechnical = actor?.is_technical === 0;
 
-    if (!actorIsNonTechnical) {
+    // Autopilot skips the plan gate too (extra/autopilot.md).
+    if (!actorIsNonTechnical && !autopilotOn) {
       return;
     }
     if (task?.workflow_blocked) {
@@ -161,6 +179,7 @@ async function handleAgentChaining(
         await startAgentRun(taskId, 'implementation', { broadcastFn, broadcastToTaskSubscribersFn, userId });
       } catch (err) {
         console.error(`[ConversationAdapter] Failed to auto-start implementation after planification:`, err);
+        autopilot.onAutopilotLoopStopped(taskId, `could not start implementation: ${errorText(err)}`);
       }
     }, 1000);
     return;
@@ -179,6 +198,7 @@ async function handleAgentChaining(
           await startAgentRun(taskId, 'refinement', { broadcastFn, broadcastToTaskSubscribersFn, userId });
         } catch (err) {
           console.error(`[ConversationAdapter] Failed to start refinement agent:`, err);
+          autopilot.onAutopilotLoopStopped(taskId, `could not start refinement: ${errorText(err)}`);
         }
       }, 1000);
       return;
@@ -192,6 +212,13 @@ async function handleAgentChaining(
       }
       const hasWorktree = await worktreeExists(taskWithProject.repo_folder_path, taskId);
 
+      // Autopilot without an origin remote: no PR possible, merge locally.
+      if (hasWorktree && (await autopilot.shouldSkipPrAgent(taskId, taskWithProject.repo_folder_path))) {
+        console.log(`[ConversationAdapter] Autopilot: no remote, merging task ${taskId} locally`);
+        await autopilot.finishAutopilotTask(taskId, context);
+        return;
+      }
+
       if (hasWorktree) {
         console.log(`[ConversationAdapter] Starting PR agent for task ${taskId}`);
         const { startAgentRun } = await import('../agentRunner.js');
@@ -200,6 +227,7 @@ async function handleAgentChaining(
             await startAgentRun(taskId, 'pr', { broadcastFn, broadcastToTaskSubscribersFn, userId });
           } catch (err) {
             console.error(`[ConversationAdapter] Failed to start PR agent:`, err);
+            autopilot.onAutopilotLoopStopped(taskId, `could not start the PR agent: ${errorText(err)}`);
           }
         }, 1000);
         return;
@@ -207,11 +235,15 @@ async function handleAgentChaining(
     }
 
     console.log(`[ConversationAdapter] Task ${taskId} workflow complete, stopping loop`);
+    if (autopilotOn) {
+      await autopilot.finishAutopilotTask(taskId, context);
+    }
     return;
   }
 
   if (task?.workflow_blocked) {
     console.log(`[ConversationAdapter] Task ${taskId} workflow blocked, stopping loop`);
+    autopilot.onAutopilotLoopStopped(taskId, 'blocked by the review agent; see Review Findings in the task doc.');
     return;
   }
 
@@ -220,6 +252,7 @@ async function handleAgentChaining(
       `[ConversationAdapter] Task ${taskId} reached max iterations (${MAX_WORKFLOW_RUNS}), auto-blocking`,
     );
     tasksDb.blockWorkflow(taskId);
+    autopilot.onAutopilotLoopStopped(taskId, `reached the iteration cap (${MAX_WORKFLOW_RUNS} runs) and was blocked.`);
 
     if (broadcastToTaskSubscribersFn) {
       // broadcastToTaskSubscribers splices `taskId` in itself; passing it
@@ -263,6 +296,11 @@ async function handleAgentChaining(
       // already marked 'completed'; the loop simply pauses here until the
       // user retries or the next loop trigger fires.
       console.error(`[ConversationAdapter] Failed to chain to ${nextType}:`, err);
+      autopilot.onAutopilotLoopStopped(taskId, `could not start ${nextType}: ${errorText(err)}`);
     }
   }, 1000);
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }

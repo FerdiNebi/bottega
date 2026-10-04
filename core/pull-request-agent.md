@@ -51,7 +51,9 @@ below. See `generatePrAgentMessage` / `buildPrCreateOrVerifyBlock` in
 
 ## Constraints
 
-- **Never merge** — the user merges manually.
+- **Never merge** — the user merges manually. (The
+  [autopilot extra](../extra/autopilot.md) merges server-side after the agent
+  finishes; the agent itself still never merges.)
 - **Bounded iteration** on every loop (CI polling, fix attempts, conflict
   resolution). If it can't reach green-and-mergeable within the caps, document
   the persistent failure and stop rather than spin forever.

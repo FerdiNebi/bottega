@@ -38,6 +38,7 @@ import BoardColumn from './BoardColumn';
 import TaskForm from '../TaskForm';
 import AskQuestionModal, { type AskQuestionPayload } from '../AskQuestionModal';
 import BootstrapSessionModal, { type BootstrapSessionPayload } from '../BootstrapSessionModal';
+import AutopilotControls from './AutopilotControls';
 import type { ProjectRow, TaskRow, TaskStatus } from '../../../shared/types/db';
 import type { CreateTaskRequest } from '../../../shared/api/tasks';
 import type {
@@ -430,6 +431,11 @@ function BoardView({ className, project }: BoardViewProps) {
     ? 'Break the PRD and ARD down into dependency-ordered tasks'
     : `Merge ${missingDocs.join(' and ')} into ${defaultBranch} first`;
 
+  // Autopilot moved on (task started, merged, stopped): refresh the columns.
+  const handleAutopilotActivity = useCallback(() => {
+    if (project) void loadTasks(project.id);
+  }, [project, loadTasks]);
+
   // Handle back navigation
   const handleBack = useCallback(() => {
     navigate(`/`);
@@ -591,6 +597,15 @@ function BoardView({ className, project }: BoardViewProps) {
               </Button>
             </div>
           )}
+        </div>
+
+        {/* Autopilot: run ready tasks in dependency order, merge, continue */}
+        <div className="mt-2">
+          <AutopilotControls
+            projectId={project.id}
+            onActivity={handleAutopilotActivity}
+            onCredentialsMissing={openAuthModal}
+          />
         </div>
       </div>
 

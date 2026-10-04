@@ -44,3 +44,9 @@ export const StartBootstrapBodySchema = z
     path: ['model'],
   });
 export type StartBootstrapBody = z.infer<typeof StartBootstrapBodySchema>;
+
+// Autopilot switch (extra/autopilot.md).
+export const SetAutopilotBodySchema = z.object({
+  enabled: z.boolean(),
+});
+export type SetAutopilotBody = z.infer<typeof SetAutopilotBodySchema>;

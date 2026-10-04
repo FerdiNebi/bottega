@@ -356,7 +356,9 @@ no table, no run gating. The operating rule is **merge a level before starting
 the next** — each task branches from the default branch, so a task only sees its
 dependencies' code once their PRs are merged. Enforced dependencies (a
 `task_dependencies` table plus disabled Run buttons) are a possible follow-up
-extra, deliberately out of scope here.
+extra, deliberately out of scope here. The [autopilot extra](./autopilot.md)
+reads the same two conventions to run the tasks in order, and merges the default
+branch into each task's worktree before starting it.
 
 ## Provider behavior
 

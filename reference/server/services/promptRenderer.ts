@@ -146,6 +146,13 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     variables: ['mode', 'input', 'taskId', 'scriptsDir'],
   },
   {
+    name: 'autopilot',
+    label: 'Autopilot Addendum',
+    kind: 'prompt',
+    file: 'autopilot.md',
+    variables: ['taskDocPath'],
+  },
+  {
     name: 'plan-template',
     label: 'Plan Template',
     kind: 'template',

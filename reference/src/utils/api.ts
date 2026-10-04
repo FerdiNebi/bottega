@@ -45,6 +45,8 @@ import type {
   BootstrapStatusResponse,
   StartBootstrapRequest,
   StartBootstrapResponse,
+  AutopilotStatusResponse,
+  StartAutopilotResponse,
 } from '../../shared/api/projects';
 import type {
   ListAllTasksResponse,
@@ -354,6 +356,18 @@ export const api = {
       authenticatedFetch<StartBootstrapResponse>(`/api/projects/${id}/bootstrap/${kind}`, {
         method: 'POST',
         body: JSON.stringify(body),
+      }),
+    // Autopilot (run tasks in dependency order, merge, continue)
+    getAutopilot: (id: number): TypedFetch<AutopilotStatusResponse> =>
+      authenticatedFetch<AutopilotStatusResponse>(`/api/projects/${id}/autopilot`),
+    setAutopilot: (id: number, enabled: boolean): TypedFetch<AutopilotStatusResponse> =>
+      authenticatedFetch<AutopilotStatusResponse>(`/api/projects/${id}/autopilot`, {
+        method: 'PUT',
+        body: JSON.stringify({ enabled }),
+      }),
+    startAutopilot: (id: number): TypedFetch<StartAutopilotResponse> =>
+      authenticatedFetch<StartAutopilotResponse>(`/api/projects/${id}/autopilot/start`, {
+        method: 'POST',
       }),
     // Web server management (for worktree serving)
     getWebServer: (id: number): TypedFetch<GetWebServerResponse> =>

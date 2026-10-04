@@ -30,6 +30,17 @@ vi.mock('../agentRunner.js', () => ({
   getRunningAgentForTask: vi.fn().mockReturnValue(null)
 }));
 
+vi.mock('../autopilotFlag.js', () => ({
+  isAutopilotProject: vi.fn().mockReturnValue(false)
+}));
+
+vi.mock('../autopilot.js', () => ({
+  onAutopilotRunCompleted: vi.fn().mockResolvedValue(false),
+  onAutopilotLoopStopped: vi.fn(),
+  shouldSkipPrAgent: vi.fn().mockResolvedValue(false),
+  finishAutopilotTask: vi.fn().mockResolvedValue(undefined)
+}));
+
 import {
   buildAgentRunCompletionHandler,
   MAX_WORKFLOW_RUNS
@@ -38,6 +49,13 @@ import { tasksDb, agentRunsDb, userDb } from '../../database/db.js';
 import { worktreeExists } from '../worktree.js';
 import { notifyClaudeComplete } from '../notifications.js';
 import { startAgentRun, getRunningAgentForTask } from '../agentRunner.js';
+import { isAutopilotProject } from '../autopilotFlag.js';
+import {
+  onAutopilotRunCompleted,
+  onAutopilotLoopStopped,
+  shouldSkipPrAgent,
+  finishAutopilotTask
+} from '../autopilot.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -46,6 +64,9 @@ beforeEach(() => {
   vi.mocked(worktreeExists).mockResolvedValue(false);
   vi.mocked(getRunningAgentForTask).mockReturnValue(null);
   vi.mocked(startAgentRun).mockResolvedValue(undefined as never);
+  vi.mocked(isAutopilotProject).mockReturnValue(false);
+  vi.mocked(onAutopilotRunCompleted).mockResolvedValue(false);
+  vi.mocked(shouldSkipPrAgent).mockResolvedValue(false);
 });
 
 afterEach(() => {
@@ -355,5 +376,81 @@ describe('buildAgentRunCompletionHandler', () => {
     await buildAgentRunCompletionHandler(c)();
 
     expect(agentRunsDb.updateStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe('autopilot hooks (extra/autopilot.md)', () => {
+  const runs = (agent_type: string, status = 'running') =>
+    vi.mocked(agentRunsDb.getByTask).mockReturnValue([
+      { id: 9, conversation_id: 100, agent_type, status }
+    ] as never);
+
+  it('hands a finished PR run to autopilot', async () => {
+    const c = ctx();
+    runs('pr');
+    vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, project_id: 3 } as never);
+
+    await buildAgentRunCompletionHandler(c)();
+
+    expect(onAutopilotRunCompleted).toHaveBeenCalledWith(7, 'pr', c);
+  });
+
+  it('records a stop when the user stopped the run', async () => {
+    runs('implementation', 'failed');
+
+    await buildAgentRunCompletionHandler(ctx())();
+
+    expect(onAutopilotLoopStopped).toHaveBeenCalledWith(7, 'the implementation run was stopped.');
+  });
+
+  it('skips the plan gate for a technical actor when autopilot is on', async () => {
+    runs('planification');
+    vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, project_id: 3, workflow_run_count: 1 } as never);
+    vi.mocked(tasksDb.getWithProject).mockReturnValue({ repo_folder_path: '/r', user_id: 1 } as never);
+    vi.mocked(userDb.getUserById).mockReturnValue({ id: 1, is_technical: 1 } as never);
+    vi.mocked(isAutopilotProject).mockReturnValue(true);
+
+    await buildAgentRunCompletionHandler(ctx())();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(startAgentRun).toHaveBeenCalledWith(7, 'implementation', expect.any(Object));
+  });
+
+  it('does not chain when autopilot handled the transition', async () => {
+    runs('planification');
+    vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, project_id: 3 } as never);
+    vi.mocked(isAutopilotProject).mockReturnValue(true);
+    vi.mocked(onAutopilotRunCompleted).mockResolvedValue(true);
+
+    await buildAgentRunCompletionHandler(ctx())();
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(startAgentRun).not.toHaveBeenCalled();
+  });
+
+  it('merges instead of starting the PR agent when there is no remote', async () => {
+    const c = ctx();
+    runs('refinement');
+    vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, project_id: 3, workflow_complete: true, refinement_complete: false, pr_agent_complete: false } as never);
+    vi.mocked(tasksDb.getWithProject).mockReturnValue({ repo_folder_path: '/r', user_id: 1 } as never);
+    vi.mocked(worktreeExists).mockResolvedValue(true);
+    vi.mocked(shouldSkipPrAgent).mockResolvedValue(true);
+
+    await buildAgentRunCompletionHandler(c)();
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(finishAutopilotTask).toHaveBeenCalledWith(7, c);
+    expect(startAgentRun).not.toHaveBeenCalled();
+  });
+
+  it('reports a blocked task and the iteration cap', async () => {
+    runs('review');
+    vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, workflow_blocked: true } as never);
+    await buildAgentRunCompletionHandler(ctx())();
+    expect(onAutopilotLoopStopped).toHaveBeenCalledWith(7, expect.stringMatching(/blocked by the review agent/));
+
+    vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, workflow_run_count: MAX_WORKFLOW_RUNS } as never);
+    await buildAgentRunCompletionHandler(ctx())();
+    expect(onAutopilotLoopStopped).toHaveBeenCalledWith(7, expect.stringMatching(/iteration cap/));
   });
 });

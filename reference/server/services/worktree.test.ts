@@ -52,6 +52,7 @@ import {
   getPullRequestStatus,
   mergeAndCleanup,
   mergeLocally,
+  updateWorktreeFromDefault,
   hasUncommittedChanges,
   commitAllChanges,
   pushChanges,
@@ -325,6 +326,67 @@ describe('Worktree Service', () => {
       expect(result.error).toMatch(/failed; the worktree was kept\. CONFLICT/);
       expect(calls()).toContain('merge --abort');
       expect(calls().some((c) => c.startsWith('worktree remove'))).toBe(false);
+    });
+  });
+
+  describe('updateWorktreeFromDefault', () => {
+    const calls = () =>
+      mockRunCommand.mock.calls.map((c) => ({ args: (c[1] as string[]).join(' '), cwd: (c[2] as { cwd?: string })?.cwd }));
+    const respond = (override: (args: RunArgs) => Promise<{ stdout: string; stderr: string }> | undefined) => {
+      mockRunCommand.mockImplementation((_cmd: string, args: RunArgs) => {
+        const custom = override(args);
+        if (custom) return custom;
+        if (args[0] === 'symbolic-ref') return Promise.resolve({ stdout: 'refs/remotes/origin/main\n', stderr: '' });
+        return Promise.resolve({ stdout: '', stderr: '' });
+      });
+    };
+
+    it('fetches origin and merges origin/<default> into the task worktree', async () => {
+      respond(() => undefined);
+
+      const result = await updateWorktreeFromDefault('/repo', 7);
+
+      expect(result).toEqual({ success: true, baseRef: 'origin/main' });
+      const log = calls();
+      expect(log).toContainEqual({ args: 'fetch --quiet origin main', cwd: '/repo' });
+      expect(log).toContainEqual({ args: 'merge --no-edit origin/main', cwd: getWorktreePath('/repo', 7) });
+    });
+
+    it('merges the local default branch when there is no origin remote', async () => {
+      respond((args) => {
+        if (args[0] === 'symbolic-ref' || (args[0] === 'remote' && args[1] === 'get-url')) {
+          return Promise.reject(new Error('no origin'));
+        }
+        return undefined;
+      });
+
+      const result = await updateWorktreeFromDefault('/repo', 7);
+
+      expect(result).toEqual({ success: true, baseRef: 'main' });
+      expect(calls().some((c) => c.args.startsWith('fetch'))).toBe(false);
+      expect(calls().map((c) => c.args)).toContain('merge --no-edit main');
+    });
+
+    it('falls back to the local branch when the fetch fails', async () => {
+      respond((args) => (args[0] === 'fetch' ? Promise.reject(new Error('offline')) : undefined));
+
+      const result = await updateWorktreeFromDefault('/repo', 7);
+
+      expect(result).toEqual({ success: true, baseRef: 'main' });
+    });
+
+    it('aborts a conflicting merge and reports it', async () => {
+      respond((args) =>
+        args[0] === 'merge' && args[1] === '--no-edit'
+          ? Promise.reject(Object.assign(new Error('Command failed'), { stdout: 'CONFLICT (content): app.ts' }))
+          : undefined,
+      );
+
+      const result = await updateWorktreeFromDefault('/repo', 7);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/Could not merge origin\/main into the task branch[\s\S]*CONFLICT/);
+      expect(calls().map((c) => c.args)).toContain('merge --abort');
     });
   });
 

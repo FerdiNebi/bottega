@@ -73,6 +73,9 @@ export interface ProjectRow {
   serve_symlink_path: string | null;
   systemd_service_name: string | null;
   app_url: string | null;
+  // Autopilot extra: 0/1 switch + the last start/stop message for the board.
+  autopilot_enabled: number;
+  autopilot_message: string | null;
   created_at: string;
   updated_at: string;
 }
