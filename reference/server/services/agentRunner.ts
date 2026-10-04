@@ -13,7 +13,13 @@ import { isAutopilotProject } from './autopilotFlag.js';
 import { startConversation } from './conversationAdapter.js';
 import { updateUserBadge } from './notifications.js';
 import { buildContextPrompt, getTaskDocPath, getRecordingPath } from './documentation.js';
-import { getWorktreeProjectPath, worktreeExists, getPullRequestStatus } from './worktree.js';
+import {
+  getWorktreeProjectPath,
+  worktreeExists,
+  getPullRequestStatus,
+  getDefaultBranch,
+} from './worktree.js';
+import { assertValidBranchName } from './validators.js';
 import { getCredentialStore } from './credentials/registry.js';
 import { ProviderCredentialsMissingError } from './credentials/types.js';
 import {
@@ -104,24 +110,30 @@ export async function startAgentRun(
       // getPullRequestStatus internally derives the worktree path from repo + taskId
       const prStatus = await getPullRequestStatus(taskWithProject.repo_folder_path, taskId);
       const prUrl = prStatus.exists ? prStatus.url ?? null : null;
+      const baseBranch = await getBaseBranch(taskWithProject.repo_folder_path);
 
       // Use review-specific prompt if triggered by webhook with review comments
       // Use comment-specific prompt if triggered by webhook with single comment context
       const webhookCtx = options.webhookContext;
       if (webhookCtx?.comments) {
         // Shape is validated by the webhook route (commit 5: zod boundary).
-        message = await generatePrAgentReviewMessage(taskDocPath, taskId, prUrl, webhookCtx as never);
+        message = await generatePrAgentReviewMessage(taskDocPath, taskId, prUrl, webhookCtx as never, baseBranch);
       } else if (webhookCtx) {
-        message = await generatePrAgentCommentMessage(taskDocPath, taskId, prUrl, webhookCtx as never);
+        message = await generatePrAgentCommentMessage(taskDocPath, taskId, prUrl, webhookCtx as never, baseBranch);
       } else {
-        message = await generatePrAgentMessage(taskDocPath, taskId, prUrl);
+        message = await generatePrAgentMessage(taskDocPath, taskId, prUrl, baseBranch);
       }
       break;
     }
     case 'yolo': {
       const yoloPrStatus = await getPullRequestStatus(taskWithProject.repo_folder_path, taskId);
       const yoloPrUrl = yoloPrStatus.exists ? yoloPrStatus.url ?? null : null;
-      message = await generateYoloMessage(taskDocPath, taskId, yoloPrUrl);
+      message = await generateYoloMessage(
+        taskDocPath,
+        taskId,
+        yoloPrUrl,
+        await getBaseBranch(taskWithProject.repo_folder_path),
+      );
       break;
     }
     default:
@@ -266,6 +278,11 @@ export async function startAgentRun(
   });
 
   return { agentRun, conversation, claudeSessionId };
+}
+
+/** The branch PRs target and rebase onto (origin/HEAD, else main). */
+async function getBaseBranch(repoPath: string): Promise<string> {
+  return assertValidBranchName(await getDefaultBranch(repoPath), 'default branch');
 }
 
 /**

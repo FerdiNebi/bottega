@@ -106,21 +106,21 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     label: 'PR Agent',
     kind: 'prompt',
     file: 'pr.md',
-    variables: ['taskDocPath', 'taskId', 'prContextLine', 'prCreateOrVerifyBlock'],
+    variables: ['taskDocPath', 'taskId', 'prContextLine', 'prCreateOrVerifyBlock', 'baseBranch'],
   },
   {
     name: 'yolo',
     label: 'YOLO Agent',
     kind: 'prompt',
     file: 'yolo.md',
-    variables: ['taskDocPath', 'taskId', 'prContextLine', 'prCreateOrVerifyBlock'],
+    variables: ['taskDocPath', 'taskId', 'prContextLine', 'prCreateOrVerifyBlock', 'baseBranch'],
   },
   {
     name: 'pr-feedback',
     label: 'PR Feedback Response',
     kind: 'prompt',
     file: 'pr-feedback.md',
-    variables: ['taskDocPath', 'taskId', 'prUrl', 'feedbackSection'],
+    variables: ['taskDocPath', 'taskId', 'prUrl', 'feedbackSection', 'baseBranch'],
   },
   // Project bootstrap sessions (extra/project-bootstrap.md). Rendered as the
   // first user message of a manual chat, so they survive every resumed turn.

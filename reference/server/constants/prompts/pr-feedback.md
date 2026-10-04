@@ -78,12 +78,13 @@ tsx {{scriptsDir}}/complete-pr.ts {{taskId}}
 **If mergeable is "CONFLICTING" (has conflicts):**
 1. Rebase onto the base branch to resolve conflicts:
    ```bash
-   git fetch origin main && git rebase origin/main
+   git fetch origin {{baseBranch}} && git rebase origin/{{baseBranch}}
    ```
-2. Resolve any conflicts during the rebase
+2. Resolve any conflicts during the rebase, keeping the intent of both sides
 3. Continue the rebase: `git rebase --continue`
-4. Force push: `git push --force-with-lease`
-5. Return to step 6 to re-check CI (max 3 conflict resolution attempts)
+4. Run the project's tests (and build) on the rebased code; fix and commit anything the combination broke
+5. Force push: `git push --force-with-lease`
+6. Return to step 6 to re-check CI (max 3 conflict resolution attempts)
 
 **If mergeable is "UNKNOWN":**
 - Wait 10 seconds and re-check (GitHub may still be computing mergeability)
