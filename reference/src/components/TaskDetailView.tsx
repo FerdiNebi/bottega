@@ -1014,6 +1014,7 @@ Please:
             isLoading={isLoadingDoc}
             placeholder="No task documentation yet. Click Edit to describe what needs to be done."
             className="md:flex-1 md:min-h-0"
+            hideContentOnMobile
           />
           <AgentSection
             agentRuns={agentRuns}

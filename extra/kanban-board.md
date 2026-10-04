@@ -54,7 +54,7 @@ Chat) with a back button at each level.
 |---|---|---|
 | **Dashboard** | `/` | Grid of project cards; each card shows task counts and a live indicator. Create / edit / delete projects. |
 | **Board** | `/projects/:projectId` | Kanban for one project: four status columns. Create / edit / delete tasks. |
-| **Task Detail** | `/projects/:projectId/tasks/:taskId` | The task doc (editable markdown), the conversation list, and the **AgentSection** Run buttons. |
+| **Task Detail** | `/projects/:projectId/tasks/:taskId` | The task doc (editable markdown), the conversation list, and the **AgentSection** Run buttons. On phone-width screens the doc body is hidden, leaving its header with **Show** (full-screen view) and **Edit**, so the agents aren't buried below a long doc. |
 | **Chat** | `/projects/:projectId/tasks/:taskId/chat/:conversationId` | One streaming conversation — manual chat or a resumed agent run. |
 
 **All ids in the URL are SQLite row ids.** `:projectId`, `:taskId`,

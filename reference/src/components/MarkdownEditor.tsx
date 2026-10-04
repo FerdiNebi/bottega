@@ -85,6 +85,11 @@ interface MarkdownEditorProps {
   placeholder?: string | undefined;
   className?: string | undefined;
   editable?: boolean | undefined;
+  /**
+   * Hide the rendered content below the `md` breakpoint (phones), keeping
+   * the header with Show/Edit. Only applies when there is a Show button.
+   */
+  hideContentOnMobile?: boolean | undefined;
 }
 
 function MarkdownEditor({
@@ -95,7 +100,8 @@ function MarkdownEditor({
   isLoading = false,
   placeholder = 'No documentation yet. Click Edit to add content.',
   className,
-  editable = true
+  editable = true,
+  hideContentOnMobile = false,
 }: MarkdownEditorProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState<string>(content ?? '');
@@ -234,8 +240,14 @@ function MarkdownEditor({
         </div>
       )}
 
-      {/* Content area */}
-      <div className="flex-1 overflow-auto p-4">
+      {/* Content area — on phones optionally only reachable through Show */}
+      <div
+        className={cn(
+          'flex-1 overflow-auto p-4',
+          hideContentOnMobile && onShowClick && content && !isEditing && 'hidden md:block'
+        )}
+        data-testid="markdown-content"
+      >
         {isEditing ? (
           <div className="flex gap-2 items-start h-full">
             <textarea
