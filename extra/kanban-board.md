@@ -54,7 +54,7 @@ Chat) with a back button at each level.
 |---|---|---|
 | **Dashboard** | `/` | Grid of project cards; each card shows task counts and a live indicator. Create / edit / delete projects. |
 | **Board** | `/projects/:projectId` | Kanban for one project: four status columns. Create / edit / delete tasks. |
-| **Task Detail** | `/projects/:projectId/tasks/:taskId` | The task doc (editable markdown), the conversation list, and the **AgentSection** Run buttons. |
+| **Task Detail** | `/projects/:projectId/tasks/:taskId` | The task doc (editable markdown), the conversation list, and the **AgentSection** Run buttons. On phone-width screens the doc body is hidden, leaving its header with **Show** (full-screen view) and **Edit**, so the agents aren't buried below a long doc. |
 | **Chat** | `/projects/:projectId/tasks/:taskId/chat/:conversationId` | One streaming conversation — manual chat or a resumed agent run. |
 
 **All ids in the URL are SQLite row ids.** `:projectId`, `:taskId`,
@@ -140,6 +140,13 @@ just calls the endpoint.)
 The reference Board also has an **Ask Question** shortcut that creates a
 throwaway task + a conversation in one step and jumps straight to Chat — handy,
 but it is the same two primitives (create task, create conversation) composed.
+
+If the [project bootstrap](./project-bootstrap.md) extra is installed, the Board
+header also carries its **Create/Refine PRD**, **Create/Refine ARD**, and
+**Create initial tasks** buttons. They are the same composition again (task +
+conversation, with a rendered prompt as the first message), and the tasks that
+session creates arrive through a script rather than this form — a second front
+door onto the same create-task side effects.
 
 ## The AgentSection "Run" buttons → the orchestration loop
 

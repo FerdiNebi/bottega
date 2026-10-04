@@ -84,6 +84,34 @@ export async function getDefaultBranch(repoPath: string): Promise<string> {
   }
 }
 
+export interface BootstrapBase {
+  defaultBranch: string;
+  /** `origin/<default>` after a successful fetch, else the local default branch. */
+  baseRef: string;
+  /** True when the fetch failed and `baseRef` is the possibly stale local branch. */
+  stale: boolean;
+}
+
+/**
+ * Fetch the remote default branch and return the ref bootstrap should read from
+ * and branch from. Falls back to the local default branch when the fetch fails
+ * (offline, no `origin`).
+ */
+export async function resolveBootstrapBase(repoPath: string): Promise<BootstrapBase> {
+  const defaultBranch = assertValidBranchName(await getDefaultBranch(repoPath), 'default branch');
+  try {
+    await runCommand('git', ['fetch', '--quiet', 'origin', defaultBranch], {
+      cwd: repoPath,
+      timeout: 60_000,
+    });
+    return { defaultBranch, baseRef: `origin/${defaultBranch}`, stale: false };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[bootstrap] git fetch failed in ${repoPath}, using local ${defaultBranch}: ${message}`);
+    return { defaultBranch, baseRef: defaultBranch, stale: true };
+  }
+}
+
 /**
  * Get the current branch name from a worktree
  */
@@ -95,6 +123,17 @@ export async function getBranchName(worktreePath: string): Promise<string | null
     return stdout.trim();
   } catch {
     return null;
+  }
+}
+
+async function localBranchExists(repoPath: string, branch: string): Promise<boolean> {
+  try {
+    await runCommand('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], {
+      cwd: repoPath,
+    });
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -181,13 +220,16 @@ export interface CreateWorktreeResult {
 }
 
 /**
- * Create a worktree for a task
+ * Create a worktree for a task. Branches from the local default branch unless
+ * `baseRef` is given (project bootstrap passes `origin/<default>` so new tasks
+ * see freshly merged docs).
  */
 export async function createWorktree(
   repoPath: string,
   taskId: number,
   title: string | null | undefined,
   subprojectPath: string | null = null,
+  baseRef?: string,
 ): Promise<CreateWorktreeResult> {
   const sanitizedTitle = sanitizeTitle(title);
   const branch = `task/${taskId}-${sanitizedTitle}`;
@@ -197,13 +239,34 @@ export async function createWorktree(
   try {
     await fs.promises.mkdir(worktreesDir, { recursive: true });
 
-    const baseBranch = assertValidBranchName(await getDefaultBranch(repoPath), 'default branch');
+    const base = baseRef
+      ? assertValidBranchName(baseRef, 'base ref')
+      : assertValidBranchName(await getDefaultBranch(repoPath), 'default branch');
 
-    await runCommand(
-      'git',
-      ['worktree', 'add', '-b', assertValidBranchName(branch), worktreePath, baseBranch],
-      { cwd: repoPath },
-    );
+    const branchExisted = await localBranchExists(repoPath, assertValidBranchName(branch));
+    try {
+      await runCommand(
+        'git',
+        [
+          'worktree',
+          'add',
+          // A remote-tracking base would otherwise become the branch's upstream.
+          ...(baseRef ? ['--no-track'] : []),
+          '-b',
+          branch,
+          worktreePath,
+          base,
+        ],
+        { cwd: repoPath },
+      );
+    } catch (addError) {
+      // `worktree add -b` creates the branch before checking it out, so a
+      // failed checkout (e.g. the path already exists) leaves a stray branch.
+      if (!branchExisted) {
+        await runCommand('git', ['branch', '-D', branch], { cwd: repoPath }).catch(() => {});
+      }
+      throw addError;
+    }
 
     const projectPath = subprojectPath ? path.join(worktreePath, subprojectPath) : worktreePath;
 
@@ -228,6 +291,25 @@ export interface RemoveWorktreeResult {
 /**
  * Remove a worktree and its branch
  */
+/**
+ * `git worktree remove --force`, falling back to deleting the folder and
+ * pruning git's registration when git can't delete it — on Windows, git
+ * fails with "Filename too long" on deep node_modules paths, while Node's fs
+ * handles long paths. Either way uncommitted changes are discarded, as with
+ * `--force`.
+ */
+async function deleteWorktreeDir(repoPath: string, worktreePath: string): Promise<void> {
+  try {
+    await runCommand('git', ['worktree', 'remove', worktreePath, '--force'], { cwd: repoPath });
+    return;
+  } catch (error) {
+    if (!fs.existsSync(worktreePath)) throw error;
+    console.warn(`[worktree] git could not remove ${worktreePath}, deleting it directly: ${gitErrorText(error)}`);
+  }
+  await fs.promises.rm(worktreePath, { recursive: true, force: true, maxRetries: 3 });
+  await runCommand('git', ['worktree', 'prune'], { cwd: repoPath });
+}
+
 export async function removeWorktree(
   repoPath: string,
   taskId: number,
@@ -235,9 +317,9 @@ export async function removeWorktree(
   const worktreePath = getWorktreePath(repoPath, taskId);
 
   try {
-    const branch = await getBranchName(worktreePath);
+    const branch = await getTaskBranch(repoPath, taskId);
 
-    await runCommand('git', ['worktree', 'remove', worktreePath, '--force'], { cwd: repoPath });
+    await deleteWorktreeDir(repoPath, worktreePath);
 
     if (branch) {
       try {
@@ -400,19 +482,41 @@ export interface PullRequestStatusResult {
 }
 
 /**
- * Get the status of a pull request for a task's worktree branch
+ * The task's branch: what its worktree has checked out, else the local
+ * `task/<id>-…` branch. The fallback matters when the worktree folder is
+ * gone or is no longer a checkout (a half-finished cleanup on Windows).
+ */
+export async function getTaskBranch(repoPath: string, taskId: number): Promise<string | null> {
+  const fromWorktree = await getBranchName(getWorktreePath(repoPath, taskId));
+  if (fromWorktree) return fromWorktree;
+  try {
+    const { stdout } = await runCommand(
+      'git',
+      ['branch', '--list', '--format=%(refname:short)', `task/${taskId}-*`],
+      { cwd: repoPath },
+    );
+    return stdout.split('\n').map((line) => line.trim()).find(Boolean) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the status of a task branch's pull request. Looked up by branch name
+ * from the main repo, so it works even when the worktree is gone.
  */
 export async function getPullRequestStatus(
   repoPath: string,
   taskId: number,
 ): Promise<PullRequestStatusResult> {
-  const worktreePath = getWorktreePath(repoPath, taskId);
+  const branch = await getTaskBranch(repoPath, taskId);
+  if (!branch) return { success: true, exists: false };
 
   try {
     const { stdout } = await runCommand(
       'gh',
-      ['pr', 'view', '--json', 'url,state,mergeable'],
-      { cwd: worktreePath },
+      ['pr', 'view', assertValidBranchName(branch), '--json', 'url,state,mergeable'],
+      { cwd: repoPath },
     );
     const prData = JSON.parse(stdout) as { url: string; state: string; mergeable: string };
 
@@ -420,8 +524,8 @@ export async function getPullRequestStatus(
     try {
       const { stdout: checksOutput } = await runCommand(
         'gh',
-        ['pr', 'checks', '--json', 'bucket,name,state,link'],
-        { cwd: worktreePath },
+        ['pr', 'checks', branch, '--json', 'bucket,name,state,link'],
+        { cwd: repoPath },
       );
       const checks = JSON.parse(checksOutput) as CICheck[];
 
@@ -460,78 +564,94 @@ export async function getPullRequestStatus(
   }
 }
 
+export interface MergeAndCleanupResult extends RemoveWorktreeResult {
+  /** The PR is merged, but removing the worktree or updating the default branch failed. */
+  cleanupWarning?: string;
+}
+
 /**
- * Merge a pull request and clean up the worktree and branch
+ * Merge a task's pull request (unless it is already merged), then remove the
+ * worktree and branch and pull the default branch. Once the PR is merged the
+ * result is a success: cleanup problems come back as `cleanupWarning`.
  */
 export async function mergeAndCleanup(
   repoPath: string,
   taskId: number,
-): Promise<RemoveWorktreeResult> {
+): Promise<MergeAndCleanupResult> {
   const worktreePath = getWorktreePath(repoPath, taskId);
+  let branch: string;
+  let mainBranch: string;
 
   try {
-    const branch = await getBranchName(worktreePath);
-    const mainBranch = assertValidBranchName(await getDefaultBranch(repoPath), 'default branch');
-
-    let merged = false;
-    let lastMergeError: Error | null = null;
-    for (let mergeAttempt = 0; mergeAttempt < 3 && !merged; mergeAttempt++) {
-      try {
-        await runCommand('gh', ['pr', 'merge', '--merge'], { cwd: worktreePath });
-        merged = true;
-      } catch (mergeError) {
-        lastMergeError = mergeError instanceof Error ? mergeError : new Error(String(mergeError));
-        const message = lastMergeError.message;
-        const is502 = message.includes('502');
-        const isMergeInProgress = message.includes('Merge already in progress');
-
-        if (is502 || isMergeInProgress) {
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-          try {
-            await runCommand('git', ['fetch', 'origin'], { cwd: worktreePath });
-            const { stdout: branchHead } = await runCommand('git', ['rev-parse', 'HEAD'], {
-              cwd: worktreePath,
-            });
-            const { stdout: mergeCheck } = await runCommand(
-              'git',
-              ['branch', '-r', '--contains', branchHead.trim(), `origin/${mainBranch}`],
-              { cwd: worktreePath },
-            );
-            if (mergeCheck.trim().length > 0) {
-              merged = true;
-            }
-          } catch {
-            /* will retry merge */
-          }
-        } else {
-          break;
-        }
-      }
+    const taskBranch = await getTaskBranch(repoPath, taskId);
+    if (!taskBranch) {
+      return { success: false, error: `Could not find the branch for task ${taskId}` };
     }
-    if (!merged) {
-      throw lastMergeError ?? new Error('Failed to merge after retries');
+    branch = assertValidBranchName(taskBranch);
+    mainBranch = assertValidBranchName(await getDefaultBranch(repoPath), 'default branch');
+
+    const pr = await getPullRequestStatus(repoPath, taskId);
+    if (!(pr.exists && pr.state === 'MERGED')) {
+      await mergePullRequest(repoPath, branch, mainBranch);
     }
-
-    await runCommand('git', ['worktree', 'remove', worktreePath, '--force'], { cwd: repoPath });
-
-    if (branch) {
-      try {
-        await runCommand('git', ['branch', '-D', assertValidBranchName(branch)], {
-          cwd: repoPath,
-        });
-      } catch {
-        /* ignore */
-      }
-    }
-
-    await runCommand('git', ['checkout', mainBranch], { cwd: repoPath });
-    await runCommand('git', ['pull'], { cwd: repoPath });
-
-    return { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { success: false, error: message };
   }
+
+  const warnings: string[] = [];
+  if (fs.existsSync(worktreePath)) {
+    try {
+      await deleteWorktreeDir(repoPath, worktreePath);
+    } catch (error) {
+      warnings.push(`Could not remove the worktree ${worktreePath}: ${gitErrorText(error)}`);
+    }
+  }
+  try {
+    await runCommand('git', ['branch', '-D', branch], { cwd: repoPath });
+  } catch {
+    /* already gone */
+  }
+  try {
+    await runCommand('git', ['checkout', mainBranch], { cwd: repoPath });
+    await runCommand('git', ['pull'], { cwd: repoPath });
+  } catch (error) {
+    warnings.push(`Could not update local ${mainBranch}: ${gitErrorText(error)}`);
+  }
+
+  return warnings.length ? { success: true, cleanupWarning: warnings.join('\n') } : { success: true };
+}
+
+/** `gh pr merge`, retrying GitHub's transient 502 / "merge in progress". */
+async function mergePullRequest(repoPath: string, branch: string, mainBranch: string): Promise<void> {
+  let lastMergeError: Error | null = null;
+  for (let mergeAttempt = 0; mergeAttempt < 3; mergeAttempt++) {
+    try {
+      await runCommand('gh', ['pr', 'merge', branch, '--merge'], { cwd: repoPath });
+      return;
+    } catch (mergeError) {
+      lastMergeError = mergeError instanceof Error ? mergeError : new Error(String(mergeError));
+      const message = lastMergeError.message;
+      const is502 = message.includes('502');
+      const isMergeInProgress = message.includes('Merge already in progress');
+      if (!is502 && !isMergeInProgress) break;
+
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      try {
+        await runCommand('git', ['fetch', 'origin'], { cwd: repoPath });
+        const { stdout: branchHead } = await runCommand('git', ['rev-parse', branch], { cwd: repoPath });
+        const { stdout: mergeCheck } = await runCommand(
+          'git',
+          ['branch', '-r', '--contains', branchHead.trim(), `origin/${mainBranch}`],
+          { cwd: repoPath },
+        );
+        if (mergeCheck.trim().length > 0) return;
+      } catch {
+        /* will retry merge */
+      }
+    }
+  }
+  throw lastMergeError ?? new Error('Failed to merge after retries');
 }
 
 export interface UncommittedChangesResult {
@@ -582,6 +702,237 @@ export async function commitAllChanges(
       return { success: true };
     }
     return { success: false, error: errMessage };
+  }
+}
+
+/**
+ * The branch a local merge targets. Unlike getDefaultBranch, never falls back
+ * to whatever the main checkout has checked out — that would make the
+ * "main checkout must be on the default branch" guard meaningless.
+ */
+async function getMergeTargetBranch(repoPath: string): Promise<string | null> {
+  try {
+    const { stdout } = await runCommand('git', ['symbolic-ref', 'refs/remotes/origin/HEAD'], {
+      cwd: repoPath,
+    });
+    return stdout.trim().replace('refs/remotes/origin/', '');
+  } catch {
+    // No remote HEAD — look for a conventional local default branch.
+  }
+  for (const candidate of ['main', 'master']) {
+    if (await localBranchExists(repoPath, candidate)) return candidate;
+  }
+  return null;
+}
+
+export interface MergeLocallyResult {
+  success: boolean;
+  branch?: string;
+  defaultBranch?: string;
+  /** True when the merged default branch was pushed to `origin`. */
+  pushed?: boolean;
+  /** Set when there is a remote but the push failed; the merge is kept. */
+  pushError?: string;
+  error?: string;
+}
+
+export async function hasOriginRemote(repoPath: string): Promise<boolean> {
+  try {
+    await runCommand('git', ['remote', 'get-url', 'origin'], { cwd: repoPath });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function gitErrorText(error: unknown): string {
+  // Failed-command messages carry stderr; some git output (e.g. CONFLICT
+  // lines) only appears on stdout.
+  const stdout = (error as { stdout?: string }).stdout?.trim();
+  const message = error instanceof Error ? error.message : String(error);
+  return stdout ? `${message.trim()}\n${stdout}` : message.trim();
+}
+
+export interface UpdateWorktreeResult {
+  success: boolean;
+  /** The ref that was merged into the task branch. */
+  baseRef?: string;
+  error?: string;
+}
+
+/**
+ * Bring a task worktree up to date with the default branch before work starts
+ * on it: merge `origin/<default>` (after a fetch) into the task branch, or the
+ * local default branch when there is no remote or the fetch fails. A failed
+ * merge is aborted so the worktree is left as it was.
+ */
+export async function updateWorktreeFromDefault(
+  repoPath: string,
+  taskId: number,
+): Promise<UpdateWorktreeResult> {
+  const worktreePath = getWorktreePath(repoPath, taskId);
+  const target = await getMergeTargetBranch(repoPath);
+  if (!target) {
+    return {
+      success: false,
+      error: 'Could not determine the default branch (no origin/HEAD, main or master)',
+    };
+  }
+  assertValidBranchName(target, 'default branch');
+
+  let baseRef = target;
+  if (await hasOriginRemote(repoPath)) {
+    try {
+      await runCommand('git', ['fetch', '--quiet', 'origin', target], {
+        cwd: repoPath,
+        timeout: 60_000,
+      });
+      baseRef = `origin/${target}`;
+    } catch (error) {
+      console.warn(`[worktree] git fetch failed in ${repoPath}, merging local ${target}: ${gitErrorText(error)}`);
+    }
+  }
+
+  try {
+    await runCommand('git', ['merge', '--no-edit', baseRef], { cwd: worktreePath });
+    return { success: true, baseRef };
+  } catch (error) {
+    try {
+      await runCommand('git', ['merge', '--abort'], { cwd: worktreePath });
+    } catch {
+      /* nothing to abort (the merge refused to start) */
+    }
+    return {
+      success: false,
+      baseRef,
+      error: `Could not merge ${baseRef} into the task branch: ${gitErrorText(error)}`,
+    };
+  }
+}
+
+/**
+ * "Merge without PR": sync the default branch from `origin`, commit any
+ * uncommitted worktree changes, merge the task branch into the default branch
+ * in the main checkout, push it when there is a remote, then remove the
+ * worktree and branch. The worktree is kept whenever the merge does not
+ * happen, so no work is lost; a failed push is reported but keeps the merge.
+ */
+export async function mergeLocally(
+  repoPath: string,
+  taskId: number,
+  commitMessage: string,
+): Promise<MergeLocallyResult> {
+  const worktreePath = getWorktreePath(repoPath, taskId);
+
+  try {
+    const branch = await getBranchName(worktreePath);
+    if (!branch) {
+      return { success: false, error: 'Could not determine worktree branch' };
+    }
+    assertValidBranchName(branch);
+    const target = await getMergeTargetBranch(repoPath);
+    if (!target) {
+      return {
+        success: false,
+        error: 'Could not determine the default branch: no origin/HEAD and no local main or master branch.',
+      };
+    }
+    const defaultBranch = assertValidBranchName(target, 'default branch');
+
+    const checkedOut = await getBranchName(repoPath);
+    if (checkedOut !== defaultBranch) {
+      return {
+        success: false,
+        error: `The main checkout must be on ${defaultBranch} to merge (it is on ${checkedOut || 'a detached HEAD'}). Check out ${defaultBranch} in ${repoPath} and try again.`,
+      };
+    }
+
+    // Bring the local default branch up to date first, so the push below is
+    // not rejected because PRs were merged on the remote in the meantime.
+    const hasRemote = await hasOriginRemote(repoPath);
+    if (hasRemote) {
+      let fetched = false;
+      try {
+        await runCommand('git', ['fetch', '--quiet', 'origin', defaultBranch], {
+          cwd: repoPath,
+          timeout: 60_000,
+        });
+        fetched = true;
+      } catch (fetchError) {
+        // Offline or no such remote branch yet: merge locally; the push reports it.
+        console.warn(`[merge-local] fetch failed in ${repoPath}: ${gitErrorText(fetchError)}`);
+      }
+      if (fetched) {
+        try {
+          await runCommand('git', ['merge', '--ff-only', `origin/${defaultBranch}`], {
+            cwd: repoPath,
+          });
+        } catch (ffError) {
+          return {
+            success: false,
+            error: `Could not update local ${defaultBranch} from origin/${defaultBranch} (it may have diverged, or local changes are in the way). Nothing was merged; the worktree was kept. ${gitErrorText(ffError)}`,
+          };
+        }
+      }
+    }
+
+    // Check first: git reports "nothing to commit" on stdout, which the
+    // failed-command error does not carry (same guard as createOrUpdatePR).
+    const changes = await hasUncommittedChanges(repoPath, taskId);
+    if (!changes.success) {
+      return { success: false, error: `Failed to read worktree status: ${changes.error}` };
+    }
+    if (changes.hasChanges) {
+      const commit = await commitAllChanges(repoPath, taskId, commitMessage);
+      if (!commit.success) {
+        return { success: false, error: `Failed to commit worktree changes: ${commit.error}` };
+      }
+    }
+
+    try {
+      await runCommand('git', ['merge', '--no-ff', '-m', `Merge ${branch}`, branch], {
+        cwd: repoPath,
+      });
+    } catch (mergeError) {
+      // Leave the main checkout as it was. Fails harmlessly when no merge is in
+      // progress (e.g. git refused up front because local changes were in the way).
+      await runCommand('git', ['merge', '--abort'], { cwd: repoPath }).catch(() => {});
+      // git reports conflicts ("CONFLICT (content): …") on stdout, which the
+      // failed-command message does not include.
+      const stdout = (mergeError as { stdout?: string }).stdout?.trim();
+      const message = stdout || (mergeError instanceof Error ? mergeError.message : String(mergeError));
+      return {
+        success: false,
+        error: `Merging ${branch} into ${defaultBranch} failed; the worktree was kept. ${message}`,
+      };
+    }
+
+    let pushed = false;
+    let pushError: string | undefined;
+    if (hasRemote) {
+      try {
+        await runCommand('git', ['push', 'origin', defaultBranch], {
+          cwd: repoPath,
+          timeout: 120_000,
+        });
+        pushed = true;
+      } catch (error) {
+        pushError = gitErrorText(error);
+      }
+    }
+
+    const removed = await removeWorktree(repoPath, taskId);
+    if (!removed.success) {
+      return {
+        success: false,
+        error: `Merged into ${defaultBranch}${pushed ? ' and pushed' : ''}, but removing the worktree failed: ${removed.error}`,
+      };
+    }
+
+    return { success: true, branch, defaultBranch, pushed, ...(pushError ? { pushError } : {}) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { success: false, error: message };
   }
 }
 

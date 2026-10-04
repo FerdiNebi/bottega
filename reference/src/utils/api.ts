@@ -41,6 +41,12 @@ import type {
   SwitchWebServerRequest,
   SwitchWebServerResponse,
   VerifyWebServerResponse,
+  BootstrapKind,
+  BootstrapStatusResponse,
+  StartBootstrapRequest,
+  StartBootstrapResponse,
+  AutopilotStatusResponse,
+  StartAutopilotResponse,
 } from '../../shared/api/projects';
 import type {
   ListAllTasksResponse,
@@ -51,6 +57,7 @@ import type {
   UpdateTaskRequest,
   UpdateTaskResponse,
   DeleteTaskResponse,
+  MergeLocallyResponse,
   GetTaskDocResponse,
   UpdateTaskDocRequest,
   UpdateTaskDocResponse,
@@ -338,6 +345,30 @@ export const api = {
       authenticatedFetch<DeleteProjectResponse>(`/api/projects/${id}`, {
         method: 'DELETE',
       }),
+    // Project bootstrap (PRD / ARD / initial tasks)
+    getBootstrap: (id: number): TypedFetch<BootstrapStatusResponse> =>
+      authenticatedFetch<BootstrapStatusResponse>(`/api/projects/${id}/bootstrap`),
+    startBootstrap: (
+      id: number,
+      kind: BootstrapKind,
+      body: StartBootstrapRequest
+    ): TypedFetch<StartBootstrapResponse> =>
+      authenticatedFetch<StartBootstrapResponse>(`/api/projects/${id}/bootstrap/${kind}`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    // Autopilot (run tasks in dependency order, merge, continue)
+    getAutopilot: (id: number): TypedFetch<AutopilotStatusResponse> =>
+      authenticatedFetch<AutopilotStatusResponse>(`/api/projects/${id}/autopilot`),
+    setAutopilot: (id: number, enabled: boolean): TypedFetch<AutopilotStatusResponse> =>
+      authenticatedFetch<AutopilotStatusResponse>(`/api/projects/${id}/autopilot`, {
+        method: 'PUT',
+        body: JSON.stringify({ enabled }),
+      }),
+    startAutopilot: (id: number): TypedFetch<StartAutopilotResponse> =>
+      authenticatedFetch<StartAutopilotResponse>(`/api/projects/${id}/autopilot/start`, {
+        method: 'POST',
+      }),
     // Web server management (for worktree serving)
     getWebServer: (id: number): TypedFetch<GetWebServerResponse> =>
       authenticatedFetch<GetWebServerResponse>(`/api/projects/${id}/web-server`),
@@ -461,6 +492,8 @@ export const api = {
         `/api/tasks/${id}/worktree${force ? '?force=true' : ''}`,
         { method: 'DELETE' }
       ),
+    mergeLocally: (id: number): TypedFetch<MergeLocallyResponse> =>
+      authenticatedFetch<MergeLocallyResponse>(`/api/tasks/${id}/merge-local`, { method: 'POST' }),
     pushChanges: (id: number, commitMessage?: string): TypedFetch<PushChangesResponse> => {
       const body: PushChangesRequest = { commitMessage };
       return authenticatedFetch<PushChangesResponse>(`/api/tasks/${id}/push-changes`, {

@@ -8,8 +8,15 @@ vi.mock('../database/db.js', () => ({
     create: vi.fn(),
     getById: vi.fn(),
     update: vi.fn(),
-    delete: vi.fn()
+    delete: vi.fn(),
+    setAutopilotEnabled: vi.fn(),
+    setAutopilotMessage: vi.fn()
   }
+}));
+
+vi.mock('../services/autopilot.js', () => ({
+  getAutopilotStatus: vi.fn(),
+  startNextAutopilotTask: vi.fn(),
 }));
 
 // Mock the projectService
@@ -34,7 +41,30 @@ vi.mock('../middleware/upload.js', async () => {
   };
 });
 
+// Mock the bootstrap service (real error classes, mocked I/O)
+vi.mock('../services/projectBootstrap.js', () => {
+  class BootstrapRequestError extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+      super(message);
+      this.status = status;
+    }
+  }
+  return {
+    BootstrapRequestError,
+    getBootstrapStatus: vi.fn(),
+    startBootstrapSession: vi.fn(),
+  };
+});
+
 import projectsRoutes from './projects.js';
+import {
+  BootstrapRequestError,
+  getBootstrapStatus,
+  startBootstrapSession,
+} from '../services/projectBootstrap.js';
+import { ProviderCredentialsMissingError } from '../services/credentials/types.js';
+import { getAutopilotStatus, startNextAutopilotTask } from '../services/autopilot.js';
 import { projectsDb } from '../database/db.js';
 import { getAllProjects, getProject, updateProject, deleteProject } from '../services/projectService.js';
 import { saveConversationUpload } from '../services/documentation.js';
@@ -284,6 +314,196 @@ describe('Projects Routes - Phase 3', () => {
       expect(response.status).toBe(201);
       expect(response.body.success).toBe(true);
       expect(response.body.file.relativePath).toBe('./tmp/data.xlsx');
+    });
+  });
+
+  describe('GET /api/projects/:id/bootstrap', () => {
+    it('returns the status without the internal base ref', async () => {
+      vi.mocked(getProject).mockReturnValue({ id: 1, repo_folder_path: '/repo' } as never);
+      vi.mocked(getBootstrapStatus).mockResolvedValue({
+        defaultBranch: 'main',
+        baseRef: 'origin/main',
+        isGitRepository: true,
+        prd: { onMain: true },
+        ard: { onMain: false },
+        stale: false,
+      });
+
+      const response = await request(app).get('/api/projects/1/bootstrap');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        defaultBranch: 'main',
+        isGitRepository: true,
+        prd: { onMain: true },
+        ard: { onMain: false },
+        stale: false,
+      });
+      expect(getBootstrapStatus).toHaveBeenCalledWith('/repo');
+    });
+
+    it('returns 404 for a non-member', async () => {
+      vi.mocked(getProject).mockReturnValue(undefined);
+
+      const response = await request(app).get('/api/projects/1/bootstrap');
+
+      expect(response.status).toBe(404);
+      expect(getBootstrapStatus).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /api/projects/:id/bootstrap/:kind', () => {
+    const project = { id: 1, repo_folder_path: '/repo', subproject_path: null };
+
+    it('starts a session and returns the ids', async () => {
+      vi.mocked(getProject).mockReturnValue(project as never);
+      vi.mocked(startBootstrapSession).mockResolvedValue({ taskId: 5, conversationId: 9, initialMessage: 'hi' });
+
+      const response = await request(app)
+        .post('/api/projects/1/bootstrap/prd')
+        .send({ input: 'A meal ordering app', provider: 'anthropic', model: 'opus' });
+
+      expect(response.status).toBe(201);
+      expect(response.body).toEqual({ taskId: 5, conversationId: 9, initialMessage: 'hi' });
+      expect(startBootstrapSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'prd',
+          project,
+          userId: testUserId,
+          input: 'A meal ordering app',
+          provider: 'anthropic',
+          model: 'opus',
+        }),
+      );
+    });
+
+    it('rejects an unknown kind, a missing model, and a model from another provider', async () => {
+      vi.mocked(getProject).mockReturnValue(project as never);
+
+      const badKind = await request(app)
+        .post('/api/projects/1/bootstrap/docs')
+        .send({ provider: 'anthropic', model: 'opus' });
+      const noModel = await request(app)
+        .post('/api/projects/1/bootstrap/ard')
+        .send({ provider: 'anthropic' });
+      const wrongModel = await request(app)
+        .post('/api/projects/1/bootstrap/ard')
+        .send({ provider: 'anthropic', model: 'gpt-5.5' });
+
+      expect(badKind.status).toBe(400);
+      expect(noModel.status).toBe(400);
+      expect(wrongModel.status).toBe(400);
+      expect(startBootstrapSession).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 for a non-member', async () => {
+      vi.mocked(getProject).mockReturnValue(undefined);
+
+      const response = await request(app)
+        .post('/api/projects/1/bootstrap/tasks')
+        .send({ provider: 'anthropic', model: 'opus' });
+
+      expect(response.status).toBe(404);
+      expect(startBootstrapSession).not.toHaveBeenCalled();
+    });
+
+    it('returns 409 when a prerequisite is missing', async () => {
+      vi.mocked(getProject).mockReturnValue(project as never);
+      vi.mocked(startBootstrapSession).mockRejectedValue(
+        new BootstrapRequestError(409, 'ARD.md must be merged into main before creating initial tasks'),
+      );
+
+      const response = await request(app)
+        .post('/api/projects/1/bootstrap/tasks')
+        .send({ provider: 'anthropic', model: 'opus' });
+
+      expect(response.status).toBe(409);
+      expect(response.body.error).toMatch(/ARD.md must be merged/);
+    });
+
+    it('returns 403 PROVIDER_CREDENTIALS_MISSING when the provider is not connected', async () => {
+      vi.mocked(getProject).mockReturnValue(project as never);
+      vi.mocked(startBootstrapSession).mockRejectedValue(
+        new ProviderCredentialsMissingError('openai', 'no token'),
+      );
+
+      const response = await request(app)
+        .post('/api/projects/1/bootstrap/ard')
+        .send({ provider: 'openai', model: 'gpt-5.5' });
+
+      expect(response.status).toBe(403);
+      expect(response.body.code).toBe('PROVIDER_CREDENTIALS_MISSING');
+      expect(response.body.provider).toBe('openai');
+    });
+  });
+
+  describe('autopilot', () => {
+    const project = { id: 1, repo_folder_path: '/repo', autopilot_enabled: 0 };
+    const status = {
+      enabled: true,
+      isGitRepository: true,
+      running: null,
+      next: { taskId: 4, title: '1. Scaffold' },
+      readyCount: 1,
+      waitingCount: 2,
+      blockedCount: 0,
+      message: null,
+    };
+
+    it('GET returns the status, 404 for a project without access', async () => {
+      vi.mocked(getProject).mockReturnValue(project as never);
+      vi.mocked(getAutopilotStatus).mockResolvedValue(status as never);
+
+      const response = await request(app).get('/api/projects/1/autopilot');
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(status);
+
+      vi.mocked(getProject).mockReturnValue(null as never);
+      expect((await request(app).get('/api/projects/1/autopilot')).status).toBe(404);
+    });
+
+    it('PUT toggles the switch, clears the message and validates the body', async () => {
+      vi.mocked(getProject).mockReturnValue(project as never);
+      vi.mocked(getAutopilotStatus).mockResolvedValue(status as never);
+
+      const response = await request(app).put('/api/projects/1/autopilot').send({ enabled: true });
+      expect(response.status).toBe(200);
+      expect(projectsDb.setAutopilotEnabled).toHaveBeenCalledWith(1, true);
+      expect(projectsDb.setAutopilotMessage).toHaveBeenCalledWith(1, null);
+
+      const bad = await request(app).put('/api/projects/1/autopilot').send({ enabled: 'yes' });
+      expect(bad.status).toBe(400);
+    });
+
+    it('POST start returns the started task and step', async () => {
+      vi.mocked(getProject).mockReturnValue(project as never);
+      vi.mocked(startNextAutopilotTask).mockResolvedValue({ status: 'started', taskId: 4, step: 'planification' });
+
+      const response = await request(app).post('/api/projects/1/autopilot/start');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ taskId: 4, step: 'planification' });
+      expect(startNextAutopilotTask).toHaveBeenCalledWith(1, expect.objectContaining({ userId: testUserId }));
+    });
+
+    it('POST start returns 409 with the reason when nothing started', async () => {
+      vi.mocked(getProject).mockReturnValue(project as never);
+      vi.mocked(startNextAutopilotTask).mockResolvedValue({ status: 'idle', message: 'Done: no tasks left to run.' });
+
+      const response = await request(app).post('/api/projects/1/autopilot/start');
+
+      expect(response.status).toBe(409);
+      expect(response.body.error).toBe('Done: no tasks left to run.');
+    });
+
+    it('POST start maps missing credentials to 403', async () => {
+      vi.mocked(getProject).mockReturnValue(project as never);
+      vi.mocked(startNextAutopilotTask).mockRejectedValue(new ProviderCredentialsMissingError('anthropic', 'x'));
+
+      const response = await request(app).post('/api/projects/1/autopilot/start');
+
+      expect(response.status).toBe(403);
+      expect(response.body.code).toBe('PROVIDER_CREDENTIALS_MISSING');
     });
   });
 });

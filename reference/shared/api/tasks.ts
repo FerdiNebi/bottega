@@ -182,6 +182,25 @@ export interface DiscardWorktreeConflictResponse {
   hasChanges: true;
 }
 
+// `POST /api/tasks/:id/merge-local` ("Merge without PR") — sync the default
+// branch from origin, commit the worktree, merge its branch into the default
+// branch, push it when there is a remote, remove the worktree. `pushError`
+// means the merge happened but the push failed. Server-switch fields as on
+// task delete.
+export type MergeLocallyResponse =
+  | {
+      success: true;
+      branch: string;
+      defaultBranch: string;
+      pushed: boolean;
+      pushError?: string;
+      serverSwitched?: boolean;
+      serverSwitchMessage?: string;
+      serverSwitchWarning?: string;
+      serverSwitchError?: string;
+    }
+  | { success: false; error: string };
+
 // ---- Pull request --------------------------------------------------------
 
 export interface CreatePRRequest {
@@ -226,6 +245,8 @@ export type GetPRResponse =
 export type MergeAndCleanupResponse =
   | {
       success: true;
+      // The PR was merged but removing the worktree or pulling the default branch failed.
+      cleanupWarning?: string;
       serverSwitched?: boolean;
       serverSwitchMessage?: string;
       serverSwitchWarning?: string;

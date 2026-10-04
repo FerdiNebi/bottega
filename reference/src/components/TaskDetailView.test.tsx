@@ -126,6 +126,7 @@ vi.mock('../utils/api', () => {
         createPR: vi.fn(notOk),
         mergeAndCleanup: vi.fn(notOk),
         discardWorktree: vi.fn(notOk),
+        mergeLocally: vi.fn(notOk),
         pushChanges: vi.fn(notOk),
       },
       projects: {

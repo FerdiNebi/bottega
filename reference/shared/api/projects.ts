@@ -4,7 +4,7 @@
 //  - /api/projects/:id/web-server*      (mounted via webServer.js)
 //  - /api/projects/:id/files            (inline handler in server/index.js)
 
-import type { ProjectRow } from '../types/db';
+import type { AgentType, ProjectRow } from '../types/db';
 import { expectType } from './_common';
 
 // ---- Project CRUD ---------------------------------------------------------
@@ -142,3 +142,73 @@ export type VerifyWebServerResponse = VerifyWebServerSuccess | VerifyWebServerEr
 
 expectType<ListProjectsResponse>([] as ProjectRow[]);
 expectType<GetProjectResponse>({} as ProjectRow);
+
+// ---- Project bootstrap (extra/project-bootstrap.md) ------------------------
+//
+// `GET /api/projects/:id/bootstrap` fetches `origin/<default>` and reports
+// whether PRD.md / ARD.md are on it; `stale` means the fetch failed and the
+// local default branch was read instead. `POST /api/projects/:id/bootstrap/:kind`
+// starts a PRD / ARD / task-breakdown chat session.
+
+export type BootstrapKind = 'prd' | 'ard' | 'tasks';
+
+export type BootstrapMode = 'create' | 'refine';
+
+export interface BootstrapStatusResponse {
+  /** `null` when the project folder is not a git repository. */
+  defaultBranch: string | null;
+  isGitRepository: boolean;
+  prd: { onMain: boolean };
+  ard: { onMain: boolean };
+  stale: boolean;
+}
+
+export interface StartBootstrapRequest {
+  input?: string | undefined;
+  provider: 'anthropic' | 'openai' | 'opencode';
+  model: string;
+}
+
+export interface StartBootstrapResponse {
+  taskId: number;
+  conversationId: number;
+  /** The rendered prompt sent as the first user message (shown while streaming). */
+  initialMessage: string;
+}
+
+// ---- Autopilot (extra/autopilot.md) -----------------------------------------
+//
+// `GET /api/projects/:id/autopilot` — the switch plus what it would do next.
+// `PUT /api/projects/:id/autopilot` — `{ enabled }`, returns the status.
+// `POST /api/projects/:id/autopilot/start` — start the next ready task; 409
+// with `error` when nothing was started (off, busy, running, nothing ready).
+
+export interface AutopilotTaskRef {
+  taskId: number;
+  title: string | null;
+}
+
+export interface AutopilotStatusResponse {
+  enabled: boolean;
+  isGitRepository: boolean;
+  running: (AutopilotTaskRef & { agentType: AgentType }) | null;
+  /** What Start would pick. */
+  next: AutopilotTaskRef | null;
+  readyCount: number;
+  /** Pending tasks whose dependencies aren't completed. */
+  waitingCount: number;
+  /** Started tasks with `workflow_blocked`. */
+  blockedCount: number;
+  /** The last start/merge/stop message. */
+  message: string | null;
+}
+
+export interface SetAutopilotRequest {
+  enabled: boolean;
+}
+
+export interface StartAutopilotResponse {
+  taskId: number;
+  /** The agent started, or `finish` when the task only needed merging. */
+  step: AgentType | 'finish';
+}

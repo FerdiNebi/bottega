@@ -221,6 +221,14 @@ break.
 | Context-usage UI | `reference/src/components/ChatInterface.tsx`, `reference/src/components/ContextDetailModal.tsx` |
 | Capability matrix (gates images + breakdown) | `reference/shared/providers/capabilities.ts` |
 
+## Related: guided sessions
+
+The [project bootstrap](./project-bootstrap.md) extra's PRD, ARD, and
+task-breakdown sessions are ordinary manual chats started from a rendered prompt.
+Everything in this spec (voice input, attachments, titles, the context meter)
+works in them unchanged; the structured-question panel they rely on is gated by
+`supportsAskUserQuestion`, with a plain-text fallback on other harnesses.
+
 ## Boundaries (not in this spec)
 
 - The conversation runtime that these hook into — streaming, transcript

@@ -132,4 +132,30 @@ describe('MarkdownEditor', () => {
     );
     expect(screen.queryByText('Show')).toBeNull();
   });
+
+  describe('hideContentOnMobile', () => {
+    it('hides the content below md but keeps it on desktop, with Show still available', () => {
+      render(
+        <MarkdownEditor content="Long spec" onShowClick={vi.fn()} hideContentOnMobile />
+      );
+      const area = screen.getByTestId('markdown-content');
+      expect(area.className).toContain('hidden');
+      expect(area.className).toContain('md:block');
+      expect(screen.getByText('Long spec')).toBeTruthy();
+      expect(screen.getByText('Show')).toBeTruthy();
+    });
+
+    it('keeps the content visible when there is no Show button or no content', () => {
+      const { rerender } = render(<MarkdownEditor content="Spec" hideContentOnMobile />);
+      expect(screen.getByTestId('markdown-content').className).not.toContain('hidden');
+
+      rerender(<MarkdownEditor content="" onShowClick={vi.fn()} hideContentOnMobile />);
+      expect(screen.getByTestId('markdown-content').className).not.toContain('hidden');
+    });
+
+    it('is off by default', () => {
+      render(<MarkdownEditor content="Spec" onShowClick={vi.fn()} />);
+      expect(screen.getByTestId('markdown-content').className).not.toContain('hidden');
+    });
+  });
 });

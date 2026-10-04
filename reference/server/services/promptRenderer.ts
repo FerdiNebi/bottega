@@ -122,6 +122,36 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     file: 'pr-feedback.md',
     variables: ['taskDocPath', 'taskId', 'prUrl', 'feedbackSection'],
   },
+  // Project bootstrap sessions (extra/project-bootstrap.md). Rendered as the
+  // first user message of a manual chat, so they survive every resumed turn.
+  {
+    name: 'prd',
+    label: 'Project Bootstrap: PRD',
+    kind: 'prompt',
+    file: 'prd.md',
+    variables: ['mode', 'input', 'taskId', 'scriptsDir'],
+  },
+  {
+    name: 'ard',
+    label: 'Project Bootstrap: ARD',
+    kind: 'prompt',
+    file: 'ard.md',
+    variables: ['mode', 'input', 'taskId', 'scriptsDir'],
+  },
+  {
+    name: 'task-breakdown',
+    label: 'Project Bootstrap: Initial Tasks',
+    kind: 'prompt',
+    file: 'task-breakdown.md',
+    variables: ['mode', 'input', 'taskId', 'scriptsDir'],
+  },
+  {
+    name: 'autopilot',
+    label: 'Autopilot Addendum',
+    kind: 'prompt',
+    file: 'autopilot.md',
+    variables: ['taskDocPath'],
+  },
   {
     name: 'plan-template',
     label: 'Plan Template',

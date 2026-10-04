@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Use vi.hoisted so `vi.mock` can reach the mock function before module init.
-const { mockRunCommand, mockAccess, mockMkdir, mockSymlink, mockExistsSync } = vi.hoisted(
+const { mockRunCommand, mockAccess, mockMkdir, mockSymlink, mockExistsSync, mockRm } = vi.hoisted(
   () => ({
+    mockRm: vi.fn(),
     mockRunCommand: vi.fn(),
     mockAccess: vi.fn(),
     mockMkdir: vi.fn(),
@@ -27,6 +28,7 @@ vi.mock('fs', () => ({
       access: mockAccess,
       mkdir: mockMkdir,
       symlink: mockSymlink,
+      rm: mockRm,
     },
   },
   existsSync: mockExistsSync,
@@ -34,6 +36,7 @@ vi.mock('fs', () => ({
     access: mockAccess,
     mkdir: mockMkdir,
     symlink: mockSymlink,
+    rm: mockRm,
   },
 }));
 
@@ -51,6 +54,8 @@ import {
   createPullRequest,
   getPullRequestStatus,
   mergeAndCleanup,
+  mergeLocally,
+  updateWorktreeFromDefault,
   hasUncommittedChanges,
   commitAllChanges,
   pushChanges,
@@ -182,6 +187,212 @@ describe('Worktree Service', () => {
     });
   });
 
+  describe('mergeLocally', () => {
+    // Main checkout on `main`, worktree on its task branch, no remote.
+    const dispatch = (overrides: (args: RunArgs, cwd: string) => Promise<{ stdout: string; stderr: string }> | undefined) => {
+      mockRunCommand.mockImplementation((_cmd: string, args: RunArgs, opts?: { cwd?: string }) => {
+        const cwd = opts?.cwd ?? '';
+        const custom = overrides(args, cwd);
+        if (custom) return custom;
+        if (args[0] === 'branch' && args[1] === '--show-current') {
+          return Promise.resolve({ stdout: cwd.includes('worktrees') ? 'task/12-create-ard\n' : 'main\n', stderr: '' });
+        }
+        if (args[0] === 'symbolic-ref') return Promise.reject(new Error('no origin'));
+        if (args[0] === 'status') return Promise.resolve({ stdout: ' M ARD.md\n', stderr: '' });
+        // `rev-parse --verify refs/heads/main` succeeds: a local main exists.
+        return Promise.resolve({ stdout: '', stderr: '' });
+      });
+    };
+    const calls = () => mockRunCommand.mock.calls.map((c) => (c[1] as string[]).join(' '));
+
+    it('syncs from origin, commits, merges, pushes, then removes the worktree', async () => {
+      dispatch(() => undefined);
+
+      const result = await mergeLocally('/repo', 12, 'Create ARD');
+
+      expect(result).toEqual({
+        success: true,
+        branch: 'task/12-create-ard',
+        defaultBranch: 'main',
+        pushed: true,
+      });
+      const log = calls();
+      const order = [
+        log.indexOf('fetch --quiet origin main'),
+        log.indexOf('merge --ff-only origin/main'),
+        log.indexOf('commit -m Create ARD'),
+        log.indexOf('merge --no-ff -m Merge task/12-create-ard task/12-create-ard'),
+        log.indexOf('push origin main'),
+        log.findIndex((c) => c.startsWith('worktree remove')),
+      ];
+      expect(order.every((i) => i >= 0)).toBe(true);
+      expect([...order].sort((a, b) => a - b)).toEqual(order);
+      expect(mockRunCommand).toHaveBeenCalledWith(
+        'git',
+        ['merge', '--no-ff', '-m', 'Merge task/12-create-ard', 'task/12-create-ard'],
+        { cwd: '/repo' },
+      );
+    });
+
+    it('merges locally without fetching or pushing when there is no origin remote', async () => {
+      dispatch((args) =>
+        args[0] === 'remote' ? Promise.reject(new Error('No such remote')) : undefined,
+      );
+
+      const result = await mergeLocally('/repo', 12, 'Create ARD');
+
+      expect(result).toMatchObject({ success: true, pushed: false });
+      expect(result.pushError).toBeUndefined();
+      expect(calls().some((c) => c.startsWith('fetch') || c.startsWith('push'))).toBe(false);
+    });
+
+    it('refuses before committing when local and origin have diverged', async () => {
+      dispatch((args) =>
+        args[0] === 'merge' && args[1] === '--ff-only'
+          ? Promise.reject(new Error('fatal: Not possible to fast-forward, aborting.'))
+          : undefined,
+      );
+
+      const result = await mergeLocally('/repo', 12, 'Create ARD');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/Could not update local main from origin\/main[\s\S]*Not possible to fast-forward/);
+      expect(calls().some((c) => c.startsWith('commit') || c.startsWith('merge --no-ff'))).toBe(false);
+    });
+
+    it('still merges when the fetch fails (offline)', async () => {
+      dispatch((args) => (args[0] === 'fetch' ? Promise.reject(new Error('Could not resolve host')) : undefined));
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const result = await mergeLocally('/repo', 12, 'Create ARD');
+
+      expect(result.success).toBe(true);
+      expect(calls().some((c) => c.startsWith('merge --ff-only'))).toBe(false);
+    });
+
+    it('keeps the merge and reports the error when the push fails', async () => {
+      dispatch((args) =>
+        args[0] === 'push' ? Promise.reject(new Error('! [rejected] main -> main (fetch first)')) : undefined,
+      );
+
+      const result = await mergeLocally('/repo', 12, 'Create ARD');
+
+      expect(result).toMatchObject({ success: true, pushed: false });
+      expect(result.pushError).toMatch(/rejected/);
+      expect(calls().some((c) => c.startsWith('worktree remove'))).toBe(true);
+    });
+
+    it('refuses without committing when the main checkout is not on the default branch', async () => {
+      dispatch((args, cwd) =>
+        args[1] === '--show-current' && !cwd.includes('worktrees')
+          ? Promise.resolve({ stdout: 'feature/x\n', stderr: '' })
+          : undefined,
+      );
+
+      const result = await mergeLocally('/repo', 12, 'Create ARD');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/must be on main/);
+      expect(calls().some((c) => c.startsWith('commit') || c.startsWith('merge'))).toBe(false);
+    });
+
+    it('skips the commit when the session already committed everything', async () => {
+      dispatch((args) => (args[0] === 'status' ? Promise.resolve({ stdout: '', stderr: '' }) : undefined));
+
+      const result = await mergeLocally('/repo', 12, 'Create ARD');
+
+      expect(result.success).toBe(true);
+      expect(calls().some((c) => c.startsWith('commit'))).toBe(false);
+      expect(calls()).toContain('merge --no-ff -m Merge task/12-create-ard task/12-create-ard');
+    });
+
+    it('refuses when there is no origin/HEAD and no local main or master', async () => {
+      dispatch((args) =>
+        args[0] === 'rev-parse' && args[1] === '--verify' ? Promise.reject(new Error('missing')) : undefined,
+      );
+
+      const result = await mergeLocally('/repo', 12, 'Create ARD');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/Could not determine the default branch/);
+      expect(calls().some((c) => c.startsWith('merge'))).toBe(false);
+    });
+
+    it('aborts a failed merge and keeps the worktree', async () => {
+      dispatch((args) =>
+        args[0] === 'merge' && args[1] === '--no-ff' ? Promise.reject(new Error('CONFLICT (content)')) : undefined,
+      );
+
+      const result = await mergeLocally('/repo', 12, 'Create ARD');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/failed; the worktree was kept\. CONFLICT/);
+      expect(calls()).toContain('merge --abort');
+      expect(calls().some((c) => c.startsWith('worktree remove'))).toBe(false);
+    });
+  });
+
+  describe('updateWorktreeFromDefault', () => {
+    const calls = () =>
+      mockRunCommand.mock.calls.map((c) => ({ args: (c[1] as string[]).join(' '), cwd: (c[2] as { cwd?: string })?.cwd }));
+    const respond = (override: (args: RunArgs) => Promise<{ stdout: string; stderr: string }> | undefined) => {
+      mockRunCommand.mockImplementation((_cmd: string, args: RunArgs) => {
+        const custom = override(args);
+        if (custom) return custom;
+        if (args[0] === 'symbolic-ref') return Promise.resolve({ stdout: 'refs/remotes/origin/main\n', stderr: '' });
+        return Promise.resolve({ stdout: '', stderr: '' });
+      });
+    };
+
+    it('fetches origin and merges origin/<default> into the task worktree', async () => {
+      respond(() => undefined);
+
+      const result = await updateWorktreeFromDefault('/repo', 7);
+
+      expect(result).toEqual({ success: true, baseRef: 'origin/main' });
+      const log = calls();
+      expect(log).toContainEqual({ args: 'fetch --quiet origin main', cwd: '/repo' });
+      expect(log).toContainEqual({ args: 'merge --no-edit origin/main', cwd: getWorktreePath('/repo', 7) });
+    });
+
+    it('merges the local default branch when there is no origin remote', async () => {
+      respond((args) => {
+        if (args[0] === 'symbolic-ref' || (args[0] === 'remote' && args[1] === 'get-url')) {
+          return Promise.reject(new Error('no origin'));
+        }
+        return undefined;
+      });
+
+      const result = await updateWorktreeFromDefault('/repo', 7);
+
+      expect(result).toEqual({ success: true, baseRef: 'main' });
+      expect(calls().some((c) => c.args.startsWith('fetch'))).toBe(false);
+      expect(calls().map((c) => c.args)).toContain('merge --no-edit main');
+    });
+
+    it('falls back to the local branch when the fetch fails', async () => {
+      respond((args) => (args[0] === 'fetch' ? Promise.reject(new Error('offline')) : undefined));
+
+      const result = await updateWorktreeFromDefault('/repo', 7);
+
+      expect(result).toEqual({ success: true, baseRef: 'main' });
+    });
+
+    it('aborts a conflicting merge and reports it', async () => {
+      respond((args) =>
+        args[0] === 'merge' && args[1] === '--no-edit'
+          ? Promise.reject(Object.assign(new Error('Command failed'), { stdout: 'CONFLICT (content): app.ts' }))
+          : undefined,
+      );
+
+      const result = await updateWorktreeFromDefault('/repo', 7);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/Could not merge origin\/main into the task branch[\s\S]*CONFLICT/);
+      expect(calls().map((c) => c.args)).toContain('merge --abort');
+    });
+  });
+
   describe('createWorktree', () => {
     beforeEach(() => {
       vi.mocked(mockExistsSync).mockReturnValue(false);
@@ -213,6 +424,70 @@ describe('Worktree Service', () => {
         '/home/user/repo-worktrees/task-15',
         'main',
       ]);
+    });
+
+    it('branches from an explicit base ref without tracking it', async () => {
+      withDispatch(async () => ({ stdout: '', stderr: '' }));
+
+      const result = await createWorktree('/home/user/repo', 16, 'Create PRD', null, 'origin/main');
+
+      expect(result.success).toBe(true);
+      const worktreeAddCall = mockRunCommand.mock.calls.find(
+        (c) => c[0] === 'git' && (c[1] as string[]).includes('worktree'),
+      );
+      expect(worktreeAddCall![1]).toEqual([
+        'worktree',
+        'add',
+        '--no-track',
+        '-b',
+        'task/16-create-prd',
+        getWorktreePath('/home/user/repo', 16),
+        'origin/main',
+      ]);
+      // The default branch is not looked up when a base ref is given.
+      expect(
+        mockRunCommand.mock.calls.some((c) => (c[1] as string[]).includes('symbolic-ref')),
+      ).toBe(false);
+    });
+
+    it('deletes the branch git created when worktree add fails', async () => {
+      withDispatch(async (_cmd, args) => {
+        if (args[0] === 'rev-parse' && args[1] === '--verify') throw new Error('no such branch');
+        if (args[0] === 'worktree') throw new Error('already exists');
+        return { stdout: '', stderr: '' };
+      });
+
+      const result = await createWorktree('/home/user/repo', 18, 'x', null, 'origin/main');
+
+      expect(result.success).toBe(false);
+      expect(mockRunCommand).toHaveBeenCalledWith('git', ['branch', '-D', 'task/18-x'], {
+        cwd: '/home/user/repo',
+      });
+    });
+
+    it('keeps a pre-existing branch when worktree add fails', async () => {
+      withDispatch(async (_cmd, args) => {
+        if (args[0] === 'worktree') throw new Error('branch already exists');
+        return { stdout: '', stderr: '' };
+      });
+
+      const result = await createWorktree('/home/user/repo', 19, 'x', null, 'origin/main');
+
+      expect(result.success).toBe(false);
+      expect(
+        mockRunCommand.mock.calls.some((c) => (c[1] as string[]).includes('-D')),
+      ).toBe(false);
+    });
+
+    it('rejects a flag-looking base ref', async () => {
+      withDispatch(async () => ({ stdout: '', stderr: '' }));
+
+      const result = await createWorktree('/home/user/repo', 17, 'x', null, '--upload-pack=evil');
+
+      expect(result.success).toBe(false);
+      expect(
+        mockRunCommand.mock.calls.some((c) => (c[1] as string[]).includes('worktree')),
+      ).toBe(false);
     });
 
     it('rejects an invalid base branch returned from git rather than executing it', async () => {
@@ -475,17 +750,29 @@ describe('Worktree Service', () => {
   });
 
   describe('getPullRequestStatus', () => {
-    it('returns PR status when PR exists', async () => {
-      withDispatch(async () => ({
-        stdout: JSON.stringify({
-          url: 'https://github.com/user/repo/pull/123',
-          state: 'OPEN',
-          mergeable: 'MERGEABLE',
-        }),
-        stderr: '',
-      }));
+    it('returns PR status when PR exists, looked up by branch from the main repo', async () => {
+      mockRunCommand.mockImplementation((_cmd: string, args: RunArgs) => {
+        if (args.includes('--show-current')) return Promise.resolve({ stdout: 'task/10-feature\n', stderr: '' });
+        if (args[1] === 'view') {
+          return Promise.resolve({
+            stdout: JSON.stringify({
+              url: 'https://github.com/user/repo/pull/123',
+              state: 'OPEN',
+              mergeable: 'MERGEABLE',
+            }),
+            stderr: '',
+          });
+        }
+        return Promise.resolve({ stdout: '[]', stderr: '' });
+      });
 
       const result = await getPullRequestStatus('/repo', 10);
+
+      expect(mockRunCommand).toHaveBeenCalledWith(
+        'gh',
+        ['pr', 'view', 'task/10-feature', '--json', 'url,state,mergeable'],
+        { cwd: '/repo' },
+      );
 
       expect(result.success).toBe(true);
       expect(result.exists).toBe(true);
@@ -508,6 +795,7 @@ describe('Worktree Service', () => {
 
   describe('mergeAndCleanup', () => {
     it('merges PR and cleans up worktree', async () => {
+      mockExistsSync.mockReturnValue(true);
       const calls: string[][] = [];
       withDispatch(async (cmd, args) => {
         calls.push([cmd, ...args]);
@@ -519,7 +807,7 @@ describe('Worktree Service', () => {
       const result = await mergeAndCleanup('/repo', 10);
 
       expect(result.success).toBe(true);
-      expect(calls.some((c) => c.join(' ').includes('gh pr merge --merge'))).toBe(true);
+      expect(calls.some((c) => c.join(' ').includes('gh pr merge task/10-feature --merge'))).toBe(true);
       expect(calls.some((c) => c.join(' ').includes('git worktree remove'))).toBe(true);
       expect(calls.some((c) => c.join(' ').includes('git branch -D task/10-feature'))).toBe(true);
       expect(calls.some((c) => c.join(' ').includes('git checkout main'))).toBe(true);
@@ -589,6 +877,84 @@ describe('Worktree Service', () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain('not mergeable');
       expect(mergeCallCount).toBe(1);
+    });
+
+    it('skips the merge when the PR is already merged, and still cleans up', async () => {
+      mockExistsSync.mockReturnValue(true);
+      const calls: string[] = [];
+      withDispatch(async (cmd, args) => {
+        calls.push([cmd, ...args].join(' '));
+        if (args.includes('--show-current')) return { stdout: 'task/10-feature\n', stderr: '' };
+        if (args.includes('symbolic-ref')) return { stdout: 'main\n', stderr: '' };
+        if (cmd === 'gh' && args[1] === 'view') {
+          return { stdout: JSON.stringify({ url: 'u', state: 'MERGED', mergeable: 'UNKNOWN' }), stderr: '' };
+        }
+        return { stdout: '', stderr: '' };
+      });
+
+      const result = await mergeAndCleanup('/repo', 10);
+
+      expect(result).toEqual({ success: true });
+      expect(calls.some((c) => c.startsWith('gh pr merge'))).toBe(false);
+      expect(calls.some((c) => c.startsWith('git worktree remove'))).toBe(true);
+      expect(calls).toContain('git pull');
+    });
+
+    it('deletes the folder itself when git cannot (Windows "Filename too long")', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockRm.mockResolvedValue(undefined);
+      const calls: string[] = [];
+      withDispatch(async (cmd, args) => {
+        calls.push([cmd, ...args].join(' '));
+        if (args.includes('--show-current')) return { stdout: 'task/10-feature\n', stderr: '' };
+        if (args.includes('symbolic-ref')) return { stdout: 'main\n', stderr: '' };
+        if (args[0] === 'worktree' && args[1] === 'remove') {
+          throw new Error('error: failed to delete x: Filename too long');
+        }
+        return { stdout: '', stderr: '' };
+      });
+
+      const result = await mergeAndCleanup('/repo', 10);
+
+      expect(result).toEqual({ success: true });
+      expect(mockRm).toHaveBeenCalledWith(getWorktreePath('/repo', 10), { recursive: true, force: true, maxRetries: 3 });
+      expect(calls).toContain('git worktree prune');
+    });
+
+    it('reports cleanup problems after a merge as a warning, not a failure', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockRm.mockRejectedValue(new Error('EBUSY'));
+      withDispatch(async (cmd, args) => {
+        if (args.includes('--show-current')) return { stdout: 'task/10-feature\n', stderr: '' };
+        if (args.includes('symbolic-ref')) return { stdout: 'main\n', stderr: '' };
+        if (args[0] === 'worktree' && args[1] === 'remove') throw new Error('Filename too long');
+        if (args[0] === 'pull') throw new Error('local changes would be overwritten');
+        return { stdout: '', stderr: '' };
+      });
+
+      const result = await mergeAndCleanup('/repo', 10);
+
+      expect(result.success).toBe(true);
+      expect(result.cleanupWarning).toMatch(/Could not remove the worktree[\s\S]*EBUSY/);
+      expect(result.cleanupWarning).toMatch(/Could not update local main[\s\S]*local changes/);
+    });
+
+    it('finds the task branch from the main repo when the worktree is no longer a checkout', async () => {
+      const calls: string[] = [];
+      withDispatch(async (cmd, args) => {
+        calls.push([cmd, ...args].join(' '));
+        if (args.includes('--show-current')) throw new Error('not a git repository');
+        if (args[0] === 'branch' && args[1] === '--list') return { stdout: 'task/10-feature\n', stderr: '' };
+        if (args.includes('symbolic-ref')) return { stdout: 'main\n', stderr: '' };
+        return { stdout: '', stderr: '' };
+      });
+
+      const result = await mergeAndCleanup('/repo', 10);
+
+      expect(result.success).toBe(true);
+      expect(calls).toContain('git branch --list --format=%(refname:short) task/10-*');
+      expect(calls).toContain('gh pr merge task/10-feature --merge');
+      expect(calls).toContain('git branch -D task/10-feature');
     });
   });
 

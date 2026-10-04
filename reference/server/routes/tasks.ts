@@ -26,6 +26,7 @@ import {
   syncWithMain,
   getPullRequestStatus,
   mergeAndCleanup,
+  mergeLocally,
   hasUncommittedChanges,
   pushChanges,
 } from '../services/worktree.js';
@@ -33,6 +34,7 @@ import { createOrUpdatePR } from '../services/prService.js';
 import { switchWorktree } from '../services/webServerManager.js';
 import type { TaskUpdates } from '../database/db.js';
 import type { ApiError } from '../../shared/api/_common.js';
+import type { MergeLocallyResponse } from '../../shared/api/tasks.js';
 import { validateBody, validateParams, validateQuery } from '../middleware/validate.js';
 import {
   IdParamsSchema,
@@ -948,6 +950,67 @@ router.post(
     } catch (error) {
       console.error('Error merging and cleaning up:', error);
       res.status(500).json({ error: 'Failed to merge and cleanup' } satisfies ApiError);
+    }
+  },
+);
+
+// "Merge without PR": sync from origin + commit + merge into the default
+// branch + push (when there is a remote) + remove the worktree. A failed merge
+// keeps the worktree (409); a failed push is reported in a 200 as `pushError`.
+router.post(
+  '/tasks/:id/merge-local',
+  validateParams(IdParamsSchema),
+  async (req: Request, res: Response<MergeLocallyResponse | ApiError>) => {
+    try {
+      const userId = req.user!.id;
+      const { id: taskId } = req.validated!.params as IdParams;
+
+      const taskWithProject = tasksDb.getWithProject(taskId);
+      if (!taskWithProject || !hasProjectAccess(taskWithProject.project_id, userId)) {
+        return res.status(404).json({ error: 'Task not found' } satisfies ApiError);
+      }
+
+      if (!(await worktreeExists(taskWithProject.repo_folder_path, taskId))) {
+        return res.status(404).json({ error: 'Worktree not found' } satisfies ApiError);
+      }
+
+      const project = getProject(taskWithProject.project_id, userId);
+      const wasActiveServer = project?.active_worktree_task_id === taskId;
+
+      const result = await mergeLocally(
+        taskWithProject.repo_folder_path,
+        taskId,
+        taskWithProject.title || `Task #${taskId}`,
+      );
+      if (!result.success) {
+        return res.status(409).json({ success: false, error: result.error ?? 'Merge failed' });
+      }
+
+      const response: MergeLocallyResponse = {
+        success: true,
+        branch: result.branch!,
+        defaultBranch: result.defaultBranch!,
+        pushed: !!result.pushed,
+        ...(result.pushError ? { pushError: result.pushError } : {}),
+      };
+      if (wasActiveServer && project?.serve_symlink_path) {
+        const switchResult = await switchWorktree(taskWithProject.project_id, null, userId);
+        if (switchResult.success) {
+          response.serverSwitched = true;
+          if (switchResult.warning) {
+            response.serverSwitchWarning = switchResult.warning;
+          } else {
+            response.serverSwitchMessage = 'Server switched back to main repository';
+          }
+        } else if (switchResult.error !== undefined) {
+          response.serverSwitchError = switchResult.error;
+        }
+      }
+
+      res.json(response);
+    } catch (error) {
+      console.error('Error merging locally:', error);
+      res.status(500).json({ error: 'Failed to merge locally' } satisfies ApiError);
     }
   },
 );

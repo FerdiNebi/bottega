@@ -9,6 +9,7 @@
  */
 
 import { tasksDb, agentRunsDb, conversationsDb, userDb } from '../database/db.js';
+import { isAutopilotProject } from './autopilotFlag.js';
 import { startConversation } from './conversationAdapter.js';
 import { updateUserBadge } from './notifications.js';
 import { buildContextPrompt, getTaskDocPath, getRecordingPath } from './documentation.js';
@@ -26,7 +27,7 @@ import {
   generateYoloMessage,
 } from '../constants/agentPrompts.js';
 import { loadAgentModelSettings } from './agentModelSettings.js';
-import { toPromptPath } from './promptRenderer.js';
+import { renderPrompt, toPromptPath } from './promptRenderer.js';
 import type { AgentRunRow, CreatedConversation } from '../database/db.js';
 import type {
   AgentType,
@@ -125,6 +126,13 @@ export async function startAgentRun(
     }
     default:
       throw new Error(`Unknown agent type: ${agentType}`);
+  }
+
+  // Autopilot extra: nobody answers questions, so tell the agent to decide
+  // for itself (and record the decisions) — see extra/autopilot.md.
+  const autopilot = isAutopilotProject(taskWithProject.project_id);
+  if (autopilot) {
+    message = `${message}\n\n${renderPrompt('autopilot', { taskDocPath })}`;
   }
 
   // Resolve THIS USER's configured provider for this agent up-front so we can
@@ -234,7 +242,11 @@ export async function startAgentRun(
   // Prevent implementation and yolo agents from delegating to sub-agents via the Agent tool.
   // Without this, they may spawn a sub-agent that runs for hours with zero visibility
   // in the parent conversation's JSONL. YOLO is designed as one continuous conversation.
+  // Autopilot runs also lose AskUserQuestion: there is no one to answer it.
   const disallowedTools = agentType === 'implementation' || agentType === 'yolo' ? ['Agent'] : [];
+  if (autopilot) {
+    disallowedTools.push('AskUserQuestion');
+  }
 
   // Start conversation via adapter
   // The adapter handles all lifecycle events (streaming-started, streaming-ended,

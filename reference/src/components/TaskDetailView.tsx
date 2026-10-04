@@ -404,6 +404,9 @@ function TaskDetailView({
         if (data.success) {
           setWorktreeStatus(null);
           setPrStatus(null);
+          if (data.cleanupWarning) {
+            alert(`The PR was merged, but cleanup had a problem:\n\n${data.cleanupWarning}`);
+          }
 
           // Update task status to completed
           if (onStatusChange) {
@@ -488,43 +491,31 @@ Please:
 
   const handleMergeWithoutPR = async () => {
     if (!task?.id) return;
-    if (!confirm('Merge without PR? This will clean up the worktree and the task will continue using the main repo.')) {
+    if (!confirm('Merge without PR? This commits any uncommitted changes, merges this branch into the default branch, pushes it to GitHub if the project has a remote, deletes the worktree, marks the task as completed, and returns to the project dashboard. Continue?')) {
       return;
     }
     setIsDiscarding(true);
     setWorktreeError(null);
     try {
-      // First try without force to check for uncommitted changes
-      const response = await api.tasks.discardWorktree(task.id);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setWorktreeStatus(null);
-          setPrStatus(null);
-        } else {
-          setWorktreeError((data as { error?: string }).error || 'Failed to merge without PR');
+      const response = await api.tasks.mergeLocally(task.id);
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setWorktreeStatus(null);
+        setPrStatus(null);
+        if (data.pushError) {
+          // The merge is done and kept; only the push needs a manual retry.
+          alert(
+            `Merged into ${data.defaultBranch}, but pushing it failed. Run "git push origin ${data.defaultBranch}" in the project folder.\n\n${data.pushError}`,
+          );
         }
-      } else if (response.status === 409) {
-        // Has uncommitted changes - ask for confirmation
-        const data = await response.json() as { hasChanges?: boolean };
-        if (data.hasChanges) {
-          if (confirm('This worktree has uncommitted changes that will be lost. Continue anyway?')) {
-            const forceResponse = await api.tasks.discardWorktree(task.id, true);
-            if (forceResponse.ok) {
-              const forceData = await forceResponse.json();
-              if (forceData.success) {
-                setWorktreeStatus(null);
-                setPrStatus(null);
-              } else {
-                setWorktreeError((forceData as { error?: string }).error || 'Failed to merge without PR');
-              }
-            } else {
-              setWorktreeError('Failed to merge without PR');
-            }
-          }
+        if (onStatusChange) {
+          await onStatusChange(task.id, 'completed');
+        }
+        if (onBack) {
+          onBack();
         }
       } else {
-        setWorktreeError('Failed to merge without PR');
+        setWorktreeError((data as { error?: string }).error || 'Failed to merge without PR');
       }
     } catch (err) {
       setWorktreeError((err as Error).message);
@@ -818,24 +809,22 @@ Please:
                     )}
                     Create PR
                   </Button>
-                  {/* Merge without PR button - only when no commits to push */}
-                  {worktreeStatus.ahead === 0 && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleMergeWithoutPR}
-                      disabled={isDiscarding}
-                      className="h-7 text-xs"
-                      title="Clean up worktree without creating a PR"
-                    >
-                      {isDiscarding ? (
-                        <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5" />
-                      ) : (
-                        <GitMerge className="w-3.5 h-3.5 mr-1.5" />
-                      )}
-                      Merge without PR
-                    </Button>
-                  )}
+                  {/* Merge without PR: commit + merge into the local default branch */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleMergeWithoutPR}
+                    disabled={isDiscarding}
+                    className="h-7 text-xs"
+                    title="Commit, merge into the default branch, push it if there is a remote, and remove the worktree"
+                  >
+                    {isDiscarding ? (
+                      <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5" />
+                    ) : (
+                      <GitMerge className="w-3.5 h-3.5 mr-1.5" />
+                    )}
+                    Merge without PR
+                  </Button>
                 </>
               ) : (
                 <>
@@ -1025,6 +1014,7 @@ Please:
             isLoading={isLoadingDoc}
             placeholder="No task documentation yet. Click Edit to describe what needs to be done."
             className="md:flex-1 md:min-h-0"
+            hideContentOnMobile
           />
           <AgentSection
             agentRuns={agentRuns}
