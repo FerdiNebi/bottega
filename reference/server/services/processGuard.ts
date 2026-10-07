@@ -20,7 +20,7 @@ export interface ProtectedProcesses {
 }
 
 export function getProtectedProcesses(): ProtectedProcesses {
-  const ports = [Number(process.env.PORT || 3001), Number(process.env.VITE_PORT || 5173)];
+  const ports = [Number(process.env.PORT || 7531), Number(process.env.VITE_PORT || 7530)];
   const pids = [process.pid, process.ppid];
   return {
     ports: [...new Set(ports.filter((p) => Number.isInteger(p) && p > 0))],

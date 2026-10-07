@@ -23,7 +23,7 @@ Bottega goes here instead.
 - Where does your instance run? (local only, or a VPS / dev box)
 - Public or reverse-proxy URL, if any: `https://<your-domain>` — note whether it
   is real production or a proxy to the same dev server.
-- Local URLs: frontend `http://localhost:5173`, backend `http://localhost:3001`.
+- Local URLs: frontend `http://localhost:7530`, backend `http://localhost:7531`.
 
 ## Deployment
 

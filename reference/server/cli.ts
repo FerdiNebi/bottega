@@ -105,7 +105,7 @@ function showStatus(): void {
 
   console.log(`\n${c.info('[INFO]')} Configuration:`);
   console.log(
-    `       PORT: ${c.bright(process.env.PORT || '3001')} ${c.dim(process.env.PORT ? '' : '(default)')}`,
+    `       PORT: ${c.bright(process.env.PORT || '7531')} ${c.dim(process.env.PORT ? '' : '(default)')}`,
   );
   console.log(
     `       DATABASE_PATH: ${c.dim(process.env.DATABASE_PATH || '(using default location)')}`,
@@ -134,7 +134,7 @@ function showStatus(): void {
   console.log(`      ${c.dim('>')} Set DATABASE_PATH env variable to use a custom database location`);
   console.log(`      ${c.dim('>')} Create .env file in installation directory for persistent config`);
   console.log(`      ${c.dim('>')} Run "bottega" or "cloudcli start" to start the server`);
-  console.log(`      ${c.dim('>')} Access the UI at http://localhost:3001 (or custom PORT)\n`);
+  console.log(`      ${c.dim('>')} Access the UI at http://localhost:7531 (or custom PORT)\n`);
 }
 
 function showHelp(): void {
@@ -159,7 +159,7 @@ Examples:
   $ cloudcli help               # Show help
 
 Environment Variables:
-  PORT                Set server port (default: 3001)
+  PORT                Set server port (default: 7531)
   DATABASE_PATH       Set custom database location
   CLAUDE_CLI_PATH     Set custom Claude CLI path
   CONTEXT_WINDOW      Auto-detected from SDK (1M for [1m] models)

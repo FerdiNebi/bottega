@@ -60,7 +60,7 @@ sqlite3 server/database/bottega.db "SELECT id, task_id, claude_conversation_id, 
 **Inspect messages for a conversation:**
 ```bash
 # Via API
-curl http://localhost:3001/api/conversations/<ID>/messages
+curl http://localhost:7531/api/conversations/<ID>/messages
 
 # Or directly in SQLite — project_key = repo_folder_path (or session_path) with /. → -
 sqlite3 server/database/bottega.db "SELECT seq, json_extract(entry_json,'$.type') AS type FROM messages WHERE session_id = (SELECT claude_conversation_id FROM conversations WHERE id = <ID>) ORDER BY seq"
@@ -110,7 +110,7 @@ of the handler, and delete any ad-hoc shape checks that the schema now enforces.
 This project uses **pnpm** (pinned via `packageManager` in `package.json` and
 provisioned by Corepack — run `corepack enable` once after cloning).
 
-- `pnpm dev` — frontend + backend concurrently (Vite on :5173, API on :3001)
+- `pnpm dev` — frontend + backend concurrently (Vite on :7530, API on :7531)
 - `pnpm server` / `pnpm client` — backend / frontend only (used internally by `pnpm dev`)
 - `pnpm build` — production build
 - `pnpm test:run` — unit + integration tests (single run)
@@ -145,7 +145,7 @@ Use the Playwright MCP server to validate UI work after implementing features.
    API caller has a real identity — there is no global shared key.
 
 For MCP-driven UI testing, seed a token into localStorage before navigating, then
-`browser_navigate` to `http://localhost:5173/` and the Dashboard loads
+`browser_navigate` to `http://localhost:7530/` and the Dashboard loads
 authenticated:
 ```js
 // in mcp__playwright__browser_evaluate, once per session:

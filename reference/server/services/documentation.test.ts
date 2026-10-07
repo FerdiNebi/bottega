@@ -185,7 +185,7 @@ describe('Documentation Service - Phase 2', () => {
 
     it("tells agents never to stop Bottega and to use their own port instead", () => {
       const result = buildContextPrompt(testProjectId, 1);
-      const port = Number(process.env.PORT || 3001);
+      const port = Number(process.env.PORT || 7531);
 
       expect(result).toContain('## Do Not Stop Bottega');
       expect(result).toContain(`listens on ports ${port}`);

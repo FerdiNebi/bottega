@@ -411,7 +411,7 @@ async function getFileTree(
   });
 }
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 7531;
 
 async function startServer(): Promise<void> {
   try {
@@ -437,7 +437,7 @@ async function startServer(): Promise<void> {
 
     console.log(`${c.info('[INFO]')} Using Claude Agents SDK for Claude integration`);
     console.log(
-      `${c.info('[INFO]')} Frontend served by Vite at ${c.dim('http://localhost:' + (process.env.VITE_PORT || 5173))}`,
+      `${c.info('[INFO]')} Frontend served by Vite at ${c.dim('http://localhost:' + (process.env.VITE_PORT || 7530))}`,
     );
 
     server.listen(Number(PORT), '0.0.0.0', () => {

@@ -37,7 +37,7 @@ pnpm install
 cp .env.example .env
 openssl rand -hex 64        # paste as JWT_SECRET in .env
 pnpm onboarding             # creates an admin account + seeds a sample project
-pnpm dev                    # frontend :5173, backend :3001
+pnpm dev                    # frontend :7530, backend :7531
 ```
 
 See the [README](README.md#running-the-reference-implementation) for the full
