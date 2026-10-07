@@ -151,7 +151,7 @@ async function main(): Promise<void> {
   console.log('');
   console.log(c.ok('All set.'));
   console.log(
-    'Run ' + c.bright('pnpm dev') + ' and open ' + c.info('http://localhost:5173')
+    'Run ' + c.bright('pnpm dev') + ' and open ' + c.info('http://localhost:7530')
   );
   console.log('');
 }

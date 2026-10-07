@@ -134,8 +134,8 @@ pnpm onboarding     # creates your admin account and seeds a sample project
 pnpm dev
 ```
 
-- Frontend: http://localhost:5173
-- Backend:  http://localhost:3001
+- Frontend: http://localhost:7530
+- Backend:  http://localhost:7531
 
 ### Connecting a provider
 

@@ -61,8 +61,8 @@ describe('findProtectedKill', () => {
 describe('getProtectedProcesses', () => {
   it('protects the configured ports and this process', () => {
     const p = getProtectedProcesses();
-    expect(p.ports).toContain(Number(process.env.PORT || 3001));
-    expect(p.ports).toContain(Number(process.env.VITE_PORT || 5173));
+    expect(p.ports).toContain(Number(process.env.PORT || 7531));
+    expect(p.ports).toContain(Number(process.env.VITE_PORT || 7530));
     expect(p.pids).toContain(process.pid);
   });
 });
