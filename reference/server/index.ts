@@ -76,6 +76,8 @@ import settingsRoutes from './routes/settings.js';
 import appSettingsRoutes from './routes/appSettings.js';
 import userAgentModelSettingsRoutes from './routes/userAgentModelSettings.js';
 import { initializeDatabase, agentRunsDb } from './database/db.js';
+import { logServerEvent, startServerLifecycleLog } from './services/serverLifecycleLog.js';
+import { findAgentKillCommands } from './services/agentKillCommands.js';
 import { getProject } from './services/projectService.js';
 import { transcribeAudio } from './services/transcription.js';
 import {
@@ -419,6 +421,10 @@ async function startServer(): Promise<void> {
 
     await initializeDatabase();
 
+    // Logs how the previous server ended (and, if it was killed, which agent
+    // commands stopped processes around then), then this run's lifecycle.
+    startServerLifecycleLog({ port: PORT, findKillCommands: findAgentKillCommands });
+
     const orphanedRuns = agentRunsDb.getByStatus('running');
     if (orphanedRuns.length > 0) {
       for (const run of orphanedRuns) {
@@ -454,6 +460,7 @@ async function startServer(): Promise<void> {
 }
 
 process.on('SIGTERM', () => {
+  logServerEvent('signal', { signal: 'SIGTERM' });
   console.log('[Server] SIGTERM received, shutting down gracefully...');
   server.close(() => {
     console.log('[Server] HTTP server closed');
@@ -462,6 +469,7 @@ process.on('SIGTERM', () => {
 });
 
 process.on('SIGINT', () => {
+  logServerEvent('signal', { signal: 'SIGINT' });
   console.log('[Server] SIGINT received, shutting down gracefully...');
   server.close(() => {
     console.log('[Server] HTTP server closed');

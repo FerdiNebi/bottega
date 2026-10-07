@@ -2,6 +2,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { sqliteSessionStore } from '../sqliteSessionStore.js';
+import { PROTECT_BOTTEGA_MATCHER, protectBottegaHook } from '../processGuard.js';
 import type { PermissionMode } from '@shared/websocket/messages';
 
 // bypassPermissions allows Claude to write files without prompting.
@@ -79,6 +80,7 @@ export interface SDKOptions {
   sessionStore?: typeof sqliteSessionStore;
   sessionStoreFlush?: 'eager' | 'lazy';
   mcpServers?: Record<string, unknown>;
+  hooks?: Record<string, { matcher?: string; hooks: unknown[] }[]>;
 }
 
 /**
@@ -138,6 +140,13 @@ export function mapOptionsToSDK(options: MapOptionsInput): SDKOptions {
   if (options.disallowedTools?.length) {
     sdkOptions.disallowedTools = options.disallowedTools;
   }
+
+  // Refuse shell commands that would kill Bottega itself (e.g. an agent
+  // "freeing" port 3001 for the app it is building) and edits to Bottega's own
+  // files. Hooks run in every permission mode, bypassPermissions included.
+  sdkOptions.hooks = {
+    PreToolUse: [{ matcher: PROTECT_BOTTEGA_MATCHER, hooks: [protectBottegaHook] }],
+  };
 
   if (sessionId) {
     sdkOptions.resume = sessionId;
