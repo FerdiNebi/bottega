@@ -77,6 +77,7 @@ import {
   nextStepForTask,
   onAutopilotLoopStopped,
   onAutopilotRunCompleted,
+  finishIfPrCompletedOutsideRun,
   parseDependsOn,
   parseLevel,
   planAutopilot,
@@ -434,6 +435,47 @@ describe('finishing a task (onAutopilotRunCompleted after PR / yolo)', () => {
     state.project.autopilot_enabled = 0;
 
     expect(await onAutopilotRunCompleted(1, 'pr', ctx)).toBe(false);
+    expect(mergeLocally).not.toHaveBeenCalled();
+  });
+});
+
+describe('finishIfPrCompletedOutsideRun (PR completed in a manual turn)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.mocked(hasOriginRemote).mockResolvedValue(false);
+    vi.mocked(mergeLocally).mockResolvedValue({ success: true, pushed: true });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('merges and moves on when the PR was marked complete outside an agent run', async () => {
+    state.tasks = [task(1, { status: 'in_progress', pr_agent_complete: 1 }), task(2)];
+    state.runs = [run(1, { agent_type: 'pr', status: 'failed' })];
+
+    expect(await finishIfPrCompletedOutsideRun(1, ctx)).toBe(true);
+
+    expect(mergeLocally).toHaveBeenCalledWith('/repo', 1, 'Task 1');
+    expect(state.tasks[0]!.status).toBe('completed');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(startAgentRun).toHaveBeenCalledWith(2, 'planification', ctx);
+  });
+
+  it('does nothing when the PR is not complete, the task is done, an agent runs, or autopilot is off', async () => {
+    state.tasks = [task(1, { status: 'in_progress' })];
+    expect(await finishIfPrCompletedOutsideRun(1, ctx)).toBe(false);
+
+    state.tasks = [task(1, { status: 'completed', pr_agent_complete: 1 })];
+    expect(await finishIfPrCompletedOutsideRun(1, ctx)).toBe(false);
+
+    state.tasks = [task(1, { status: 'in_progress', pr_agent_complete: 1 })];
+    state.runs = [run(1, { status: 'running', agent_type: 'pr' })];
+    expect(await finishIfPrCompletedOutsideRun(1, ctx)).toBe(false);
+
+    state.runs = [];
+    state.project.autopilot_enabled = 0;
+    expect(await finishIfPrCompletedOutsideRun(1, ctx)).toBe(false);
+
     expect(mergeLocally).not.toHaveBeenCalled();
   });
 });

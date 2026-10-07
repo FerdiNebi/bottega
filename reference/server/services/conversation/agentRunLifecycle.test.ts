@@ -37,6 +37,7 @@ vi.mock('../autopilotFlag.js', () => ({
 vi.mock('../autopilot.js', () => ({
   onAutopilotRunCompleted: vi.fn().mockResolvedValue(false),
   onAutopilotLoopStopped: vi.fn(),
+  finishIfPrCompletedOutsideRun: vi.fn().mockResolvedValue(false),
   shouldSkipPrAgent: vi.fn().mockResolvedValue(false),
   finishAutopilotTask: vi.fn().mockResolvedValue(undefined)
 }));
@@ -53,6 +54,7 @@ import { isAutopilotProject } from '../autopilotFlag.js';
 import {
   onAutopilotRunCompleted,
   onAutopilotLoopStopped,
+  finishIfPrCompletedOutsideRun,
   shouldSkipPrAgent,
   finishAutopilotTask
 } from '../autopilot.js';
@@ -67,6 +69,7 @@ beforeEach(() => {
   vi.mocked(isAutopilotProject).mockReturnValue(false);
   vi.mocked(onAutopilotRunCompleted).mockResolvedValue(false);
   vi.mocked(shouldSkipPrAgent).mockResolvedValue(false);
+  vi.mocked(finishIfPrCompletedOutsideRun).mockResolvedValue(false);
 });
 
 afterEach(() => {
@@ -401,6 +404,32 @@ describe('autopilot hooks (extra/autopilot.md)', () => {
     await buildAgentRunCompletionHandler(ctx())();
 
     expect(onAutopilotLoopStopped).toHaveBeenCalledWith(7, 'the implementation run was stopped.');
+  });
+
+  it('finishes instead of stopping when the stopped PR run had already completed the PR', async () => {
+    const c = ctx();
+    runs('pr', 'failed');
+    vi.mocked(finishIfPrCompletedOutsideRun).mockResolvedValue(true);
+
+    await buildAgentRunCompletionHandler(c)();
+
+    expect(finishIfPrCompletedOutsideRun).toHaveBeenCalledWith(7, c);
+    expect(onAutopilotLoopStopped).not.toHaveBeenCalled();
+  });
+
+  it('checks for a completed PR after a manual chat or a follow-up turn', async () => {
+    const c = ctx();
+    // Manual chat: no agent run linked to the conversation.
+    vi.mocked(agentRunsDb.getByTask).mockReturnValue([]);
+    await buildAgentRunCompletionHandler(c)();
+    expect(finishIfPrCompletedOutsideRun).toHaveBeenCalledWith(7, c);
+
+    // Follow-up message in an already completed PR run.
+    vi.mocked(finishIfPrCompletedOutsideRun).mockClear();
+    runs('pr', 'completed');
+    await buildAgentRunCompletionHandler(c)();
+    expect(finishIfPrCompletedOutsideRun).toHaveBeenCalledWith(7, c);
+    expect(onAutopilotLoopStopped).not.toHaveBeenCalled();
   });
 
   it('skips the plan gate for a technical actor when autopilot is on', async () => {

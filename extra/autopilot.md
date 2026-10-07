@@ -131,6 +131,13 @@ enabled:
   [Finishing a task](#finishing-a-task). Otherwise start the PR agent as usual.
 - **After the PR agent or a `yolo` run** (both terminal in core): go to
   [Finishing a task](#finishing-a-task).
+- **The PR completed outside a normal run:** the user stopped the PR run and
+  continued its conversation by hand, or finished the PR in a manual chat. The
+  completion handler runs for every task conversation, so when one ends with
+  `pr_agent_complete` set, the task not yet `completed` and no agent running,
+  go to [Finishing a task](#finishing-a-task) too. Merging always stays on the
+  server, which uses the machine's normal `gh` login; agents never merge and
+  never read credentials.
 - **Blocked** (review ran `block-workflow`, or the iteration cap was hit):
   stop.
 
