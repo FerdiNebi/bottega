@@ -95,10 +95,6 @@ export function buildAgentRunCompletionHandler(
         console.log(
           `[ConversationAdapter] Agent run ${agentRunId} (${agentType}) status='${status}' on stream end — no chain`,
         );
-        if (status === 'failed') {
-          const { onAutopilotLoopStopped } = await import('../autopilot.js');
-          onAutopilotLoopStopped(taskId, `the ${agentType} run was stopped.`);
-        }
       }
     }
 
@@ -109,6 +105,15 @@ export function buildAgentRunCompletionHandler(
       // merge and the next task.
       const { onAutopilotRunCompleted } = await import('../autopilot.js');
       await onAutopilotRunCompleted(taskId, linkedAgentRun.agent_type, ctx);
+    } else {
+      // Not a normally-ended agent run: a manual chat, a follow-up message in
+      // an agent's conversation, or a run the user stopped. If the PR got
+      // marked complete in it, autopilot still merges and moves on.
+      const autopilot = await import('../autopilot.js');
+      const finished = await autopilot.finishIfPrCompletedOutsideRun(taskId, ctx);
+      if (!finished && linkedAgentRun?.status === 'failed') {
+        autopilot.onAutopilotLoopStopped(taskId, `the ${linkedAgentRun.agent_type} run was stopped.`);
+      }
     }
 
     // Push notification for any task conversation (manual or agent-run-driven).

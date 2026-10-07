@@ -45,23 +45,41 @@ interface ReviewWebhookContext {
  * Pre-rendered {{prCreateOrVerifyBlock}} — the "create a new PR" vs "verify the
  * existing PR" opening step of the PR/CI procedure inlined into pr.md and yolo.md.
  */
-function buildPrCreateOrVerifyBlock(taskId: number, prUrl: string | null | undefined): string {
+function buildPrCreateOrVerifyBlock(
+  taskId: number,
+  prUrl: string | null | undefined,
+  baseBranch: string,
+): string {
+  // Rebasing before the first push (and before reusing an existing PR) keeps
+  // the PR from starting out conflicting: GitHub runs no CI on a conflicting
+  // PR, so the CI wait below would never end.
+  const rebaseStep = `Rebase onto the latest \`${baseBranch}\` so the PR doesn't start out conflicting:
+   \`\`\`bash
+   git fetch origin ${baseBranch} && git rebase origin/${baseBranch}
+   \`\`\`
+   - On conflicts: resolve each file keeping the intent of both sides, \`git add\` it, then \`git rebase --continue\`. Never \`git rebase --skip\` a commit that contains task work.
+   - If you resolved any conflicts, run the project's tests (and build) before pushing, and commit fixes for anything the combined code broke.`;
+
   if (prUrl) {
-    return `### 1. Verify PR Exists
-A PR already exists at ${prUrl}. Skip to step 2.`;
+    return `### 1. Update the Existing PR
+A PR already exists at ${prUrl}. Bring it up to date before checking CI:
+1. If \`git status\` shows uncommitted changes, commit them: \`git add -A && git commit -m "<what changed>"\`
+2. ${rebaseStep}
+3. Push (a no-op when nothing changed): \`git push --force-with-lease\``;
   }
   return `### 1. Create PR
 Create a PR for this task:
 1. Check for uncommitted changes: \`git status\`
 2. If changes exist, commit them with a concise message describing the task: \`git add -A && git commit -m "Implement <short task title>"\`
-3. Verify there are commits ahead of the base branch: \`git log origin/main..HEAD --oneline\`
+3. ${rebaseStep}
+4. Verify there are commits ahead of the base branch: \`git log origin/${baseBranch}..HEAD --oneline\`
    - **If no commits ahead** (and no uncommitted changes were found in step 1): there is nothing to submit. Run the completion script and stop:
    \`\`\`bash
    tsx ${SCRIPTS_DIR}/complete-pr.ts ${taskId}
    \`\`\`
-4. Push to origin: \`git push -u origin $(git branch --show-current)\`
-5. Create PR with a short specific title and concise summary body. Replace the placeholders with the actual task title and implementation summary:
-   \`gh pr create --title "<short task title>" --body "Summary: <what the task does and how this implementation solves it. Keep this to a short paragraph. Task: #${taskId}>"\``;
+5. Push to origin. \`--force-with-lease\` because the rebase may have rewritten commits an earlier run already pushed: \`git push --force-with-lease -u origin $(git branch --show-current)\`
+6. Create PR with a short specific title and concise summary body. Replace the placeholders with the actual task title and implementation summary:
+   \`gh pr create --base ${baseBranch} --title "<short task title>" --body "Summary: <what the task does and how this implementation solves it. Keep this to a short paragraph. Task: #${taskId}>"\``;
 }
 
 export async function generatePlanificationMessage(
@@ -96,24 +114,26 @@ export async function generatePrAgentMessage(
   taskDocPath: string,
   taskId: number,
   prUrl: string | null | undefined,
+  baseBranch: string,
 ): Promise<string> {
   const prContextLine = prUrl
     ? `- Existing PR: ${prUrl}`
     : '- No PR exists yet - you need to create one';
-  const prCreateOrVerifyBlock = buildPrCreateOrVerifyBlock(taskId, prUrl);
-  return renderPrompt('pr', { taskDocPath, taskId, prContextLine, prCreateOrVerifyBlock });
+  const prCreateOrVerifyBlock = buildPrCreateOrVerifyBlock(taskId, prUrl, baseBranch);
+  return renderPrompt('pr', { taskDocPath, taskId, prContextLine, prCreateOrVerifyBlock, baseBranch });
 }
 
 export async function generateYoloMessage(
   taskDocPath: string,
   taskId: number,
   prUrl: string | null | undefined,
+  baseBranch: string,
 ): Promise<string> {
   const prContextLine = prUrl
     ? `- Existing PR: ${prUrl}`
     : '- No PR exists yet - you will create one at the end';
-  const prCreateOrVerifyBlock = buildPrCreateOrVerifyBlock(taskId, prUrl);
-  return renderPrompt('yolo', { taskDocPath, taskId, prContextLine, prCreateOrVerifyBlock });
+  const prCreateOrVerifyBlock = buildPrCreateOrVerifyBlock(taskId, prUrl, baseBranch);
+  return renderPrompt('yolo', { taskDocPath, taskId, prContextLine, prCreateOrVerifyBlock, baseBranch });
 }
 
 export async function generatePrAgentCommentMessage(
@@ -121,6 +141,7 @@ export async function generatePrAgentCommentMessage(
   taskId: number,
   prUrl: string | null | undefined,
   webhookContext: CommentWebhookContext,
+  baseBranch: string,
 ): Promise<string> {
   const { commentBody, commentAuthor, fileContext } = webhookContext || {};
 
@@ -161,7 +182,7 @@ ${fileContext.diffHunk}
 ${quotedComment}
 ${fileLocationSection}`;
 
-  return renderPrompt('pr-feedback', { taskDocPath, taskId, prUrl, feedbackSection });
+  return renderPrompt('pr-feedback', { taskDocPath, taskId, prUrl, feedbackSection, baseBranch });
 }
 
 export async function generatePrAgentReviewMessage(
@@ -169,6 +190,7 @@ export async function generatePrAgentReviewMessage(
   taskId: number,
   prUrl: string | null | undefined,
   webhookContext: ReviewWebhookContext,
+  baseBranch: string,
 ): Promise<string> {
   const { reviewBody, reviewAuthor, comments } = webhookContext || {};
 
@@ -226,7 +248,7 @@ ${commentEntries}
 
   const feedbackSection = `## User Feedback${reviewBodySection}${inlineCommentsSection}`;
 
-  return renderPrompt('pr-feedback', { taskDocPath, taskId, prUrl, feedbackSection });
+  return renderPrompt('pr-feedback', { taskDocPath, taskId, prUrl, feedbackSection, baseBranch });
 }
 
 /**

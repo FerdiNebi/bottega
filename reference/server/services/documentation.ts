@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { toPromptPath } from './promptRenderer.js';
+import { BOTTEGA_APP_DIR, getProtectedProcesses } from './processGuard.js';
 
 const TASKS_FOLDER = 'tasks';
 const RECORDINGS_FOLDER = 'recordings';
@@ -335,6 +336,15 @@ Note: any \`.bottega/tasks/*.md\` files inside the repo itself are legacy from b
       `## Input Files\n\nIMPORTANT: At the start of this conversation, you MUST read ALL files in the following directory to get context:\n${inputFilesPath}\n\nFiles to read:\n${fileList}\n\nUse the Read tool to read each file before proceeding with any other actions. These files contain important context for this task.`,
     );
   }
+
+  const bottega = getProtectedProcesses();
+  sections.push(`## Do Not Stop Bottega
+
+You are running inside Bottega, which listens on port${bottega.ports.length > 1 ? 's' : ''} ${bottega.ports.join(' and ')} on this machine (server PID ${bottega.pids.join(', parent PID ')}). Stopping it kills this run and every other agent.
+
+- Never stop a process you didn't start yourself: no \`Stop-Process\`, \`taskkill\` or \`kill\` on PIDs you looked up by port, and no killing \`node\`/\`tsx\` processes by name.
+- Never edit Bottega's own files (anything under \`${toPromptPath(BOTTEGA_APP_DIR)}\`) unless that is the repository you are working in. If Bottega itself seems to need a change, say so in your reply instead.
+- If the app you're working on fails with EADDRINUSE on ${bottega.ports.join(' or ')}, don't free the port: start it on your dev server port (${devServerPort}) instead, e.g. \`PORT=${devServerPort}\`, and point its clients/tests at that port.`);
 
   sections.push(`## Testing Configuration
 

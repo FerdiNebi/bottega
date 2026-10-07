@@ -42,7 +42,11 @@ Now follow the standard PR creation and CI monitoring procedure below. `complete
 {{prCreateOrVerifyBlock}}
 
 ### 2. Monitor CI Status
-Check the CI status:
+First make sure the PR doesn't conflict with its base branch. GitHub does not run CI on a conflicting PR, so its checks would stay pending forever:
+```bash
+gh pr view --json mergeable --jq .mergeable
+```
+If it prints `CONFLICTING`, go straight to the conflict handling in step 4. Otherwise check the CI status:
 ```bash
 gh pr checks
 ```
@@ -51,7 +55,7 @@ gh pr checks
 
 **If PENDING:**
 - Wait 30 seconds: `sleep 30`
-- Check again (max 20 polling attempts)
+- Check again (max 20 polling attempts), re-checking `mergeable` each time: if it turns `CONFLICTING`, go to step 4
 - If still pending after 20 attempts, report status and stop
 
 **If PASSED:**
@@ -83,12 +87,13 @@ tsx {{scriptsDir}}/complete-pr.ts {{taskId}}
 **If mergeable is "CONFLICTING" (has conflicts):**
 1. Rebase onto the base branch to resolve conflicts:
    ```bash
-   git fetch origin main && git rebase origin/main
+   git fetch origin {{baseBranch}} && git rebase origin/{{baseBranch}}
    ```
-2. Resolve any conflicts during the rebase
+2. Resolve any conflicts during the rebase, keeping the intent of both sides
 3. Continue the rebase: `git rebase --continue`
-4. Force push: `git push --force-with-lease`
-5. Return to step 2 to re-check CI (max 3 conflict resolution attempts)
+4. Run the project's tests (and build) on the rebased code; fix and commit anything the combination broke
+5. Force push: `git push --force-with-lease`
+6. Return to step 2 to re-check CI (max 3 conflict resolution attempts)
 
 **If mergeable is "UNKNOWN":**
 - Wait 10 seconds and re-check (GitHub may still be computing mergeability)

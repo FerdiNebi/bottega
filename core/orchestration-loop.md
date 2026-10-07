@@ -178,6 +178,27 @@ and the obvious "pass success/failure into the handler" design is the wrong one.
   See the recovery block near the top of
   [`reference/server/index.ts`](../reference/server/index.ts)
   (`agentRunsDb.getByStatus('running')`).
+- **Agents must not kill the server.** Agents share the machine with the
+  orchestrator. An app under development that wants the same port (3001 is a
+  common default) hits EADDRINUSE, and an agent "freeing the port" force-kills
+  the server and every run with it. Tell agents in their context which ports
+  and PIDs belong to the server and to use their own dev-server port instead.
+  Where the harness supports it, refuse such commands before they run: the
+  reference installs a Claude SDK `PreToolUse` hook on `Bash|PowerShell` that
+  denies a kill command mentioning a server port or PID, or killing `node`/`tsx`
+  processes by name. The same hook (on `Edit|Write|MultiEdit|NotebookEdit`)
+  refuses edits to the orchestrator's own files unless the agent is working
+  inside that repository: an agent asked to "make it merge automatically"
+  once rewrote the orchestrator's completion script mid-task. See
+  [`reference/server/services/processGuard.ts`](../reference/server/services/processGuard.ts).
+- **Leave a trail when the server dies.** A forced kill runs no handler, so
+  keep a heartbeat in a state file and record clean exits. When the next start
+  finds no clean exit, log when the old server was last alive and the
+  process-stopping commands agents ran around then (from the stored
+  transcripts). The reference writes JSON lines to
+  `~/.bottega/logs/server.log`: start, exit, signals, uncaught exceptions,
+  blocked agent commands. See
+  [`reference/server/services/serverLifecycleLog.ts`](../reference/server/services/serverLifecycleLog.ts).
 
 ## The trigger surface
 

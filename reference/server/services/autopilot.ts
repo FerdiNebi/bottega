@@ -418,6 +418,23 @@ export async function onAutopilotRunCompleted(
   return false;
 }
 
+/**
+ * The PR was marked complete (`complete-pr.ts`) in a conversation that isn't
+ * a normally-ended agent run — e.g. the user continued a stopped PR run by
+ * hand. Finish the task as if the PR agent had. Returns true when it did.
+ */
+export async function finishIfPrCompletedOutsideRun(
+  taskId: number,
+  ctx: AutopilotContext,
+): Promise<boolean> {
+  const task = tasksDb.getById(taskId);
+  if (!task || !isAutopilotProject(task.project_id)) return false;
+  if (!task.pr_agent_complete || task.status === 'completed') return false;
+  if (agentRunsDb.getByTask(taskId).some((r) => r.status === 'running')) return false;
+  await finishAutopilotTask(taskId, ctx);
+  return true;
+}
+
 /** The finish pipeline would start the PR agent; without a remote, merge instead. */
 export async function shouldSkipPrAgent(taskId: number, repoPath: string): Promise<boolean> {
   const task = tasksDb.getById(taskId);

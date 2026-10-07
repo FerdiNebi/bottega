@@ -29,24 +29,36 @@ below. See `generatePrAgentMessage` / `buildPrCreateOrVerifyBlock` in
 
 ## The procedure
 
-1. **Create or verify the PR.**
-   - If a PR already exists for the branch → skip to CI.
-   - Otherwise: commit any uncommitted changes; confirm there are commits ahead
-     of the base branch — **if nothing is ahead and nothing was uncommitted,
-     there's nothing to submit**, so run the completion script and stop; push
-     the branch; open the PR (`gh pr create`) with a short title and a concise
-     summary referencing the task.
-2. **Monitor CI.** Poll the PR's checks on a bounded loop (sleep between polls,
-   capped attempts).
+1. **Create or update the PR, rebasing first.** Commit any uncommitted
+   changes, then rebase onto the latest base branch (`git fetch origin <base>`
+   + `git rebase origin/<base>`) **before** pushing. A PR that starts out
+   conflicting never gets CI: GitHub doesn't run `pull_request` checks on it,
+   so the wait in step 2 would never end. If the rebase needed conflict
+   resolution, re-run the tests before pushing. The base branch is the
+   repository's default branch, computed by the server and passed into the
+   prompt, never hardcoded.
+   - If a PR already exists for the branch → push the rebased branch
+     (`--force-with-lease`; a no-op when nothing changed) and go to CI.
+   - Otherwise: confirm there are commits ahead of the base branch — **if
+     nothing is ahead and nothing was uncommitted, there's nothing to
+     submit**, so run the completion script and stop; push the branch
+     (`--force-with-lease`, since a rebase may have rewritten commits an
+     earlier run pushed); open the PR (`gh pr create --base <base>`) with a
+     short title and a concise summary referencing the task.
+2. **Monitor CI.** Check mergeability first and on every poll: a
+   `CONFLICTING` PR goes straight to conflict resolution (step 4) instead of
+   waiting for checks that won't come. Poll the PR's checks on a bounded loop
+   (sleep between polls, capped attempts).
 3. **Handle the result.**
    - *Pending* → wait and re-poll (capped).
    - *Passed* → go to the conflict check.
    - *Failed* → pull the failing logs, fix the cause in the worktree, commit and
      push, and re-poll — on a bounded number of fix iterations.
-4. **Conflict check (once CI is green).** Inspect the PR's mergeability.
+4. **Conflict check (once CI is green, or as soon as step 2 sees a conflict).**
+   Inspect the PR's mergeability.
    - *Mergeable* → run the completion script that sets `pr_agent_complete`.
-   - *Conflicting* → rebase onto the base branch, resolve, force-push with lease,
-     re-check CI (bounded attempts).
+   - *Conflicting* → rebase onto the base branch, resolve, re-run the tests,
+     force-push with lease, re-check CI (bounded attempts).
    - *Unknown* → wait and re-check (the host may still be computing it).
 
 ## Constraints

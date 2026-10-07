@@ -16,30 +16,30 @@ describe('generateYoloMessage', () => {
   const taskId = 42;
 
   it('includes the task doc path and task id', async () => {
-    const msg = await generateYoloMessage(taskDocPath, taskId, null);
+    const msg = await generateYoloMessage(taskDocPath, taskId, null, 'main');
     expect(msg).toContain(taskDocPath);
     expect(msg).toContain(String(taskId));
   });
 
   it('instructs the agent not to ask clarifying questions', async () => {
-    const msg = await generateYoloMessage(taskDocPath, taskId, null);
+    const msg = await generateYoloMessage(taskDocPath, taskId, null, 'main');
     expect(msg.toLowerCase()).toContain('never ask the user clarifying questions');
   });
 
   it('instructs the agent not to spawn sub-agents', async () => {
-    const msg = await generateYoloMessage(taskDocPath, taskId, null);
+    const msg = await generateYoloMessage(taskDocPath, taskId, null, 'main');
     expect(msg.toLowerCase()).toContain('sub-agent');
   });
 
   it('requires a testing strategy with unit tests and optional Playwright verification', async () => {
-    const msg = await generateYoloMessage(taskDocPath, taskId, null);
+    const msg = await generateYoloMessage(taskDocPath, taskId, null, 'main');
     expect(msg).toContain('Testing Strategy');
     expect(msg.toLowerCase()).toContain('unit test');
     expect(msg).toContain('Playwright');
   });
 
   it('calls complete-workflow.ts before the PR phase', async () => {
-    const msg = await generateYoloMessage(taskDocPath, taskId, null);
+    const msg = await generateYoloMessage(taskDocPath, taskId, null, 'main');
     const workflowIdx = msg.indexOf('complete-workflow.ts');
     const prIdx = msg.indexOf('gh pr create');
     expect(workflowIdx).toBeGreaterThan(-1);
@@ -47,13 +47,13 @@ describe('generateYoloMessage', () => {
   });
 
   it('includes CI monitoring and complete-pr.ts', async () => {
-    const msg = await generateYoloMessage(taskDocPath, taskId, null);
+    const msg = await generateYoloMessage(taskDocPath, taskId, null, 'main');
     expect(msg).toContain('gh pr checks');
     expect(msg).toContain('complete-pr.ts');
   });
 
   it('uses a concise PR metadata example instead of generic task placeholders', async () => {
-    const msg = await generateYoloMessage(taskDocPath, taskId, null);
+    const msg = await generateYoloMessage(taskDocPath, taskId, null, 'main');
     expect(msg).toContain('--title "<short task title>"');
     expect(msg).toContain('Summary: <what the task does and how this implementation solves it');
     expect(msg).toContain(`Task: #${taskId}`);
@@ -62,26 +62,26 @@ describe('generateYoloMessage', () => {
 
   it('references an existing PR URL when provided', async () => {
     const prUrl = 'https://github.com/foo/bar/pull/1';
-    const msg = await generateYoloMessage(taskDocPath, taskId, prUrl);
+    const msg = await generateYoloMessage(taskDocPath, taskId, prUrl, 'main');
     expect(msg).toContain(prUrl);
   });
 
   it('does not explicitly merge the PR', async () => {
-    const msg = await generateYoloMessage(taskDocPath, taskId, null);
+    const msg = await generateYoloMessage(taskDocPath, taskId, null, 'main');
     expect(msg).toContain('Do NOT merge the PR');
   });
 });
 
 describe('generatePrAgentMessage (shared body refactor regression)', () => {
   it('still contains CI monitoring instructions after the refactor', async () => {
-    const msg = await generatePrAgentMessage('/repo/.bottega/tasks/task-1.md', 1, null);
+    const msg = await generatePrAgentMessage('/repo/.bottega/tasks/task-1.md', 1, null, 'main');
     expect(msg).toContain('gh pr checks');
     expect(msg).toContain('complete-pr.ts');
     expect(msg).toContain('Do NOT merge the PR');
   });
 
   it('requires a short PR title and concise summary for new pull requests', async () => {
-    const msg = await generatePrAgentMessage('/repo/.bottega/tasks/task-1.md', 1, null);
+    const msg = await generatePrAgentMessage('/repo/.bottega/tasks/task-1.md', 1, null, 'main');
     expect(msg).toContain('short specific title');
     expect(msg).toContain('concise summary body');
     expect(msg).toContain('--title "<short task title>"');
@@ -179,7 +179,7 @@ describe('generatePrAgentCommentMessage (single PR comment)', () => {
     const msg = await generatePrAgentCommentMessage(taskDocPath, taskId, prUrl, {
       commentBody: 'Please rename this function',
       commentAuthor: 'alice',
-    });
+    }, 'main');
     expect(msg).toContain(taskDocPath);
     expect(msg).toContain(prUrl);
     expect(msg).toContain('## User Feedback');
@@ -194,7 +194,7 @@ describe('generatePrAgentCommentMessage (single PR comment)', () => {
       commentBody: 'bug here',
       commentAuthor: 'bob',
       fileContext: { path: 'src/app.ts', line: 42, startLine: 42 },
-    });
+    }, 'main');
     expect(msg).toContain('Comment Location');
     expect(msg).toContain('src/app.ts');
     expect(msg).toContain('line 42');
@@ -204,7 +204,7 @@ describe('generatePrAgentCommentMessage (single PR comment)', () => {
     const msg = await generatePrAgentCommentMessage(taskDocPath, taskId, prUrl, {
       commentBody: 'x',
       commentAuthor: 'alice',
-    });
+    }, 'main');
     expect(msg).toContain('gh pr checks');
     expect(msg).toContain(`complete-pr.ts ${taskId}`);
     expect(msg).toContain('Do NOT merge the PR');
@@ -224,7 +224,7 @@ describe('generatePrAgentReviewMessage (batched review)', () => {
         { commentBody: 'extract a helper', commentAuthor: 'carol', fileContext: { path: 'a.ts', line: 10 } },
         { commentBody: 'typo', commentAuthor: 'carol', fileContext: { path: 'b.ts', line: 20 } },
       ],
-    });
+    }, 'main');
     expect(msg).toContain('## User Feedback');
     expect(msg).toContain('Review Summary');
     expect(msg).toContain('@carol');
@@ -242,9 +242,60 @@ describe('generatePrAgentReviewMessage (batched review)', () => {
       reviewBody: 'fix',
       reviewAuthor: 'carol',
       comments: [{ commentBody: 'x', commentAuthor: 'carol' }],
-    });
+    }, 'main');
     expect(msg).toContain('Address all of the feedback');
     expect(msg).toContain('gh pr checks');
     expect(msg).toContain(`complete-pr.ts ${taskId}`);
+  });
+});
+
+describe('PR procedure: rebase first, never wait on a conflicting PR', () => {
+  it('rebases onto the base branch before the first push when creating a PR', async () => {
+    const msg = await generatePrAgentMessage('/repo/.bottega/tasks/task-1.md', 1, null, 'develop');
+    const rebase = msg.indexOf('git fetch origin develop && git rebase origin/develop');
+    const push = msg.indexOf('git push --force-with-lease -u origin');
+    const create = msg.indexOf('gh pr create --base develop');
+    expect(rebase).toBeGreaterThan(-1);
+    expect(push).toBeGreaterThan(rebase);
+    expect(create).toBeGreaterThan(push);
+    expect(msg).toContain('git log origin/develop..HEAD');
+    expect(msg).not.toContain('origin/main');
+  });
+
+  it('rebases and force-pushes an existing PR before checking CI', async () => {
+    const prUrl = 'https://github.com/foo/bar/pull/7';
+    const msg = await generatePrAgentMessage('/repo/.bottega/tasks/task-1.md', 1, prUrl, 'main');
+    const update = msg.indexOf('### 1. Update the Existing PR');
+    const rebase = msg.indexOf('git rebase origin/main');
+    const checks = msg.indexOf('gh pr checks');
+    expect(update).toBeGreaterThan(-1);
+    expect(rebase).toBeGreaterThan(update);
+    expect(checks).toBeGreaterThan(rebase);
+    expect(msg).toContain('git push --force-with-lease');
+  });
+
+  it('checks for conflicts before and while waiting on CI', async () => {
+    for (const msg of [
+      await generatePrAgentMessage('/t.md', 1, null, 'main'),
+      await generateYoloMessage('/t.md', 1, null, 'main'),
+    ]) {
+      const conflictCheck = msg.indexOf('gh pr view --json mergeable --jq .mergeable');
+      expect(conflictCheck).toBeGreaterThan(-1);
+      expect(conflictCheck).toBeLessThan(msg.indexOf('gh pr checks'));
+      expect(msg).toMatch(/GitHub does not run CI on a conflicting PR/);
+      expect(msg).toMatch(/if it turns `CONFLICTING`, go to step 4/);
+    }
+  });
+
+  it('re-runs the tests after resolving conflicts', async () => {
+    const msg = await generatePrAgentMessage('/t.md', 1, null, 'main');
+    expect(msg).toMatch(/If you resolved any conflicts, run the project's tests/);
+    expect(msg).toMatch(/Run the project's tests \(and build\) on the rebased code/);
+  });
+
+  it('uses the base branch in the PR-feedback conflict handling', async () => {
+    const msg = await generatePrAgentCommentMessage('/t.md', 1, 'https://x/pull/1', { commentBody: 'x' }, 'trunk');
+    expect(msg).toContain('git fetch origin trunk && git rebase origin/trunk');
+    expect(msg).not.toContain('origin/main');
   });
 });

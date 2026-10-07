@@ -183,6 +183,16 @@ describe('Documentation Service - Phase 2', () => {
       expect(result).not.toContain('## Task Context');
     });
 
+    it("tells agents never to stop Bottega and to use their own port instead", () => {
+      const result = buildContextPrompt(testProjectId, 1);
+      const port = Number(process.env.PORT || 3001);
+
+      expect(result).toContain('## Do Not Stop Bottega');
+      expect(result).toContain(`listens on ports ${port}`);
+      expect(result).toContain(`server PID ${process.pid}`);
+      expect(result).toMatch(/don't free the port: start it on your dev server port \(3101\)/);
+    });
+
     it('should advertise spec/specifications synonyms in Task Plan File guidance', () => {
       const result = buildContextPrompt(testProjectId, 1);
 
