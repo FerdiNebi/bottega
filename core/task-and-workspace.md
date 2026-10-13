@@ -52,8 +52,8 @@ flips `pending → in_progress` on the first agent activity (see
   task description), or empty/title-only if there is none. The planning agent
   later rewrites it into a full plan but must quote the original request
   verbatim — see [`planning-agent.md`](./planning-agent.md).
-- **Shared scratchpad:** the plan, the to-do list, and the "Review Findings"
-  section all live in this one file. The implementation and review agents read
+- **Shared scratchpad:** the plan, the to-do list, the "Verification Log" and
+  the "Review Findings" section all live in this one file. The implementation and review agents read
   and write it across iterations — see [`execution-loop.md`](./execution-loop.md).
 - **Companions in the archive:** per-task **input files** (attachments) and the
   review **recording** (`recordings/task-{taskId}.webm`) live alongside the doc,
