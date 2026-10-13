@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Use vi.hoisted so `vi.mock` can reach the mock function before module init.
-const { mockRunCommand, mockAccess, mockMkdir, mockSymlink, mockExistsSync, mockRm } = vi.hoisted(
+const { mockRunCommand, mockAccess, mockMkdir, mockSymlink, mockExistsSync, mockRm, mockStopProcessesInDir } = vi.hoisted(
   () => ({
+    mockStopProcessesInDir: vi.fn(async (_dir: string) => [] as number[]),
     mockRm: vi.fn(),
     mockRunCommand: vi.fn(),
     mockAccess: vi.fn(),
@@ -18,6 +19,10 @@ const { mockRunCommand, mockAccess, mockMkdir, mockSymlink, mockExistsSync, mock
 // elements, never interpreted by a shell.
 vi.mock('./shell.js', () => ({
   runCommand: mockRunCommand,
+}));
+
+vi.mock('./worktreeProcesses.js', () => ({
+  stopProcessesInDir: mockStopProcessesInDir,
 }));
 
 // Mock fs
@@ -919,6 +924,25 @@ describe('Worktree Service', () => {
       expect(result).toEqual({ success: true });
       expect(mockRm).toHaveBeenCalledWith(getWorktreePath('/repo', 10), { recursive: true, force: true, maxRetries: 3 });
       expect(calls).toContain('git worktree prune');
+    });
+
+    it('stops processes left running in the worktree before removing it', async () => {
+      mockExistsSync.mockReturnValue(true);
+      const order: string[] = [];
+      mockStopProcessesInDir.mockImplementationOnce(async (dir: string) => {
+        order.push(`stop ${dir}`);
+        return [];
+      });
+      withDispatch(async (cmd, args) => {
+        if (args[0] === 'worktree' && args[1] === 'remove') order.push('git worktree remove');
+        if (args.includes('--show-current')) return { stdout: 'task/10-feature\n', stderr: '' };
+        if (args.includes('symbolic-ref')) return { stdout: 'main\n', stderr: '' };
+        return { stdout: '', stderr: '' };
+      });
+
+      await mergeAndCleanup('/repo', 10);
+
+      expect(order).toEqual([`stop ${getWorktreePath('/repo', 10)}`, 'git worktree remove']);
     });
 
     it('reports cleanup problems after a merge as a warning, not a failure', async () => {

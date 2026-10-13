@@ -199,6 +199,13 @@ and the obvious "pass success/failure into the handler" design is the wrong one.
   `~/.bottega/logs/server.log`: start, exit, signals, uncaught exceptions,
   blocked agent commands. See
   [`reference/server/services/serverLifecycleLog.ts`](../reference/server/services/serverLifecycleLog.ts).
+- **Stop what agents left running before removing a worktree.** Agents start
+  dev servers in the background and their runs end without stopping them.
+  The orphans keep serving stale code on the app's port and, on Windows, hold
+  the worktree's files open so removing it after a merge fails with `EBUSY`.
+  Before deleting a worktree, kill every process whose command line points
+  into it, together with its descendants, never the orchestrator itself. See
+  [`reference/server/services/worktreeProcesses.ts`](../reference/server/services/worktreeProcesses.ts).
 
 ## The trigger surface
 
