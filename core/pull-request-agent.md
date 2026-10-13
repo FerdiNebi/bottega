@@ -47,10 +47,20 @@ below. See `generatePrAgentMessage` / `buildPrCreateOrVerifyBlock` in
      short title and a concise summary referencing the task.
 2. **Monitor CI.** Check mergeability first and on every poll: a
    `CONFLICTING` PR goes straight to conflict resolution (step 4) instead of
-   waiting for checks that won't come. Poll the PR's checks on a bounded loop
-   (sleep between polls, capped attempts).
+   waiting for checks that won't come. Then wait with **one blocking watch
+   command** that returns the moment CI finishes, run in the background with a
+   capped total wait. The reference watches the head commit's GitHub Actions
+   runs (`gh run list --commit` + `gh run watch --exit-status`) rather than
+   `gh pr checks`, because a fine-grained token without the checks permission
+   can read Actions runs but not the PR's check rollup. Not with a
+   hand-written sleep loop: agents improvise those, and a loop whose exit test
+   depends on a tool the machine lacks (e.g. parsing JSON with a missing
+   `python3`) never exits early and always burns its full cap. If no checks
+   appear shortly after the push, the repository has no CI: treat it as passed.
+   Parse any JSON with the host CLI's own filter (`gh … --jq`), not external
+   tools.
 3. **Handle the result.**
-   - *Pending* → wait and re-poll (capped).
+   - *Pending* → the watch is still running; keep waiting on it (capped).
    - *Passed* → go to the conflict check.
    - *Failed* → pull the failing logs, fix the cause in the worktree, commit and
      push, and re-poll — on a bounded number of fix iterations.
@@ -66,7 +76,7 @@ below. See `generatePrAgentMessage` / `buildPrCreateOrVerifyBlock` in
 - **Never merge** — the user merges manually. (The
   [autopilot extra](../extra/autopilot.md) merges server-side after the agent
   finishes; the agent itself still never merges.)
-- **Bounded iteration** on every loop (CI polling, fix attempts, conflict
+- **Bounded iteration** on every loop (CI waiting, fix attempts, conflict
   resolution). If it can't reach green-and-mergeable within the caps, document
   the persistent failure and stop rather than spin forever.
 

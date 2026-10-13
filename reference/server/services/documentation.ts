@@ -313,7 +313,7 @@ export function buildContextPrompt(projectId: number, taskId: number): string {
   if (process.platform === 'win32') {
     sections.push(`## Shell Environment
 
-This machine runs Windows. Your Bash tool is **Git Bash**: use forward-slash paths (\`D:/dir/file\` or \`/d/dir/file\`), never backslashes, and Unix redirections (\`2>/dev/null\`, not \`2>$null\`). Git may check files out with CRLF line endings; a diff that differs only in line endings is not a real change — ignore it.`);
+This machine runs Windows. Your Bash tool is **Git Bash**: use forward-slash paths (\`D:/dir/file\` or \`/d/dir/file\`), never backslashes, and Unix redirections (\`2>/dev/null\`, not \`2>$null\`). Git may check files out with CRLF line endings; a diff that differs only in line endings is not a real change — ignore it. \`python\`/\`python3\` and \`jq\` are not installed (\`python3\` is a Microsoft Store stub that prints "Python was not found" and exits 49), so never use them in commands, and especially not in a loop's exit test: parse JSON with \`gh … --jq\` or \`node -e\`.`);
   }
 
   const taskDocPath = toPromptPath(getTaskDocPath(projectId, taskId));
