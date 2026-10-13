@@ -344,6 +344,7 @@ You are running inside Bottega, which listens on port${bottega.ports.length > 1 
 
 - Never stop a process you didn't start yourself: no \`Stop-Process\`, \`taskkill\` or \`kill\` on PIDs you looked up by port, and no killing \`node\`/\`tsx\` processes by name.
 - Never edit Bottega's own files (anything under \`${toPromptPath(BOTTEGA_APP_DIR)}\`) unless that is the repository you are working in. If Bottega itself seems to need a change, say so in your reply instead.
+- Never print or read credentials: no \`gh auth token\`, \`git credential fill\`, \`~/.git-credentials\`, Bottega's token files, \`echo $GH_TOKEN\` or full \`env\` dumps. Whatever you print is saved in the conversation. \`gh\` and \`git\` are already logged in, so run them directly; if they fail to authenticate, say so in your reply and stop.
 - If the app you're working on fails with EADDRINUSE on ${bottega.ports.join(' or ')}, don't free the port: start it on your dev server port (${devServerPort}) instead, e.g. \`PORT=${devServerPort}\`, and point its clients/tests at that port.`);
 
   sections.push(`## Testing Configuration

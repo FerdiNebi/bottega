@@ -12,6 +12,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { buildBaseSpawnEnv } from './baseSpawnEnv.js';
 
 const DEFAULT_CODEX_CONFIG_ROOT = path.join(
   os.homedir(),
@@ -316,10 +317,7 @@ export interface CodexSdkEnv extends Record<string, string | undefined> {
 export function buildCodexSdkEnv(
   userId: number | string | undefined,
 ): CodexSdkEnv {
-  const env: Record<string, string | undefined> = {
-    HOME: process.env['HOME'],
-    PATH: process.env['PATH'],
-  };
+  const env = buildBaseSpawnEnv();
   removeInheritedCodexAuthEnv(env);
   env['CODEX_HOME'] = resolveCodexHomeDir(userId);
   return env as CodexSdkEnv;

@@ -886,7 +886,7 @@ it('should broadcast streaming-ended event when streaming completes', async () =
       await startConversation(1, 'Hello', { model: 'opus' });
 
       const hooks = vi.mocked(query).mock.calls[0]![0].options!.hooks!;
-      expect(hooks.PreToolUse).toEqual([{ matcher: 'Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit', hooks: [protectBottegaHook] }]);
+      expect(hooks.PreToolUse).toEqual([{ matcher: 'Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit|Read', hooks: [protectBottegaHook] }]);
     });
 
     it('should not include disallowedTools in SDK options when empty', async () => {

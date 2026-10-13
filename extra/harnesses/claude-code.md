@@ -47,12 +47,24 @@ fronted for the registry by
   access throws. `getStatus` returns authenticated/missing plus a fingerprint
   (last 6 chars) for the settings UI.
 - **`buildSdkEnv` is the load-bearing bit.** It returns a *sparse* env —
-  `CLAUDE_CODE_OAUTH_TOKEN` set to the user's token, `HOME`/`PATH` passed
-  through, and `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` explicitly set to
-  `undefined`. Stripping those is mandatory: per Claude's auth precedence they
-  outrank `CLAUDE_CODE_OAUTH_TOKEN`, so an inherited key in `process.env` would
+  `CLAUDE_CODE_OAUTH_TOKEN` set to the user's token, `HOME`/`PATH` plus a fixed
+  OS allowlist (below) passed through, and `ANTHROPIC_API_KEY` /
+  `ANTHROPIC_AUTH_TOKEN` explicitly set to `undefined`. Stripping those is
+  mandatory: per Claude's auth precedence they outrank
+  `CLAUDE_CODE_OAUTH_TOKEN`, so an inherited key in `process.env` would
   silently win over the per-user token. The orchestrator injects this env into
   `ProviderRunOptions.env`.
+- **OS passthrough allowlist.** `HOME`/`PATH` alone are not enough on Windows:
+  without `APPDATA`/`LOCALAPPDATA`/`USERPROFILE`, CLIs the agent runs can't
+  find their per-user config (`gh` misses `%APPDATA%\GitHub CLI` and reports
+  "not logged in"), and without `PATHEXT`/`SystemRoot`/`ComSpec` PowerShell
+  can't resolve `.exe` commands at all. So the sparse env also copies, when
+  set, a fixed list of OS profile/shell variables (`USERPROFILE`, `APPDATA`,
+  `LOCALAPPDATA`, `PATHEXT`, `SystemRoot`, `ComSpec`, `TEMP`/`TMP`, `TMPDIR`,
+  `USER`, `LANG`, …) and nothing else — no credentials ride this list. The
+  helper lives in
+  [`baseSpawnEnv.ts`](../../reference/server/services/baseSpawnEnv.ts) and is
+  shared with the Codex harness.
 - **Login flow** ([`claudeAuthFlow.ts`](../../reference/server/services/claudeAuthFlow.ts),
   routes in [`routes/claudeAuth.ts`](../../reference/server/routes/claudeAuth.ts)).
   There is no API-key paste box; the user runs `claude setup-token` *through the

@@ -175,7 +175,9 @@ summary (full mechanics in [`overview.md`](./overview.md)):
 - **Per-user isolation via `CODEX_HOME`.** Every SDK invocation and every login
   subprocess runs with `CODEX_HOME=~/.config/bottega/users/{userId}/codex/`,
   and `buildCodexSdkEnv` strips every inherited `OPENAI_*`/`CODEX_*` key first
-  so a server-global `OPENAI_API_KEY` can never leak into a user's turn. The
+  so a server-global `OPENAI_API_KEY` can never leak into a user's turn. Beyond
+  `HOME`/`PATH` it passes through only the OS profile/shell allowlist shared
+  with the Claude harness (see [`claude-code.md`](./claude-code.md)). The
   per-user `auth.json` (mode 0600, ownership-checked) is the only credential
   source. See
   [`codexCredentials.ts`](../../reference/server/services/codexCredentials.ts)

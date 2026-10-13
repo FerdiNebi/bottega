@@ -7,6 +7,7 @@ import { logServerEvent } from './serverLifecycleLog.js';
 import {
   BOTTEGA_APP_DIR,
   editsBottegaFiles,
+  findCredentialRead,
   findProtectedKill,
   getProtectedProcesses,
   protectBottegaHook,
@@ -149,6 +150,97 @@ describe('protectBottegaHook on file edits', () => {
         tool_input: { file_path: path.join(cwd, 'src', 'server.ts') },
         cwd,
       }),
+    ).toEqual({});
+  });
+});
+
+describe('findCredentialRead', () => {
+  // Commands agents actually ran (2026-09-24, 2026-10-07, 2026-10-13), plus close variants.
+  it.each([
+    'gh auth token',
+    '& "C:\\Users\\u\\AppData\\Local\\Microsoft\\WinGet\\Links\\gh.exe" auth token',
+    'gh auth status --show-token',
+    'gh auth status -t',
+    'printf "protocol=https\nhost=github.com\n" | git credential fill',
+    'echo url=https://github.com | git -c credential.helper= credential fill',
+    'git credential-manager get',
+    'git-credential-manager.exe get',
+    'cat ~/.git-credentials',
+    'Get-Content "$env:USERPROFILE\\.git-credentials"',
+    'cat ~/.config/bottega/users/1/oauth_token',
+    'type C:\\Users\\u\\.config\\bottega\\users\\1\\codex\\auth.json',
+    'echo $GH_TOKEN',
+    'curl -H "Authorization: token ${GITHUB_TOKEN}" https://api.github.com/user',
+    '$env:GITHUB_TOKEN',
+    'echo %GH_TOKEN%',
+    'printenv CLAUDE_CODE_OAUTH_TOKEN',
+    '[Environment]::GetEnvironmentVariable("OPENAI_API_KEY", "Machine")',
+    'env',
+    'env | grep -i -E "github|gh_token|gh_pat" | head -5',
+    'printenv | sort',
+    'export -p',
+    'cmd /c set',
+    'Get-ChildItem env:',
+    'gci env:* | Format-Table',
+    '[Environment]::GetEnvironmentVariables()',
+    'cat /proc/self/environ',
+  ])('refuses: %s', (command) => {
+    expect(findCredentialRead(command)).not.toBeNull();
+  });
+
+  it.each([
+    'gh pr create --fill',
+    'gh auth status',
+    'gh run watch 123 --exit-status',
+    'git credential-manager --version',
+    'git push origin HEAD',
+    'env NODE_ENV=test pnpm test',
+    'export PATH="$PATH:/c/tools"',
+    'echo $PATH',
+    'printenv PATH',
+    'Get-ChildItem env:PATH',
+    'unset GH_TOKEN',
+    'cat package.json',
+    'grep -rn "oauth" src/',
+  ])('allows: %s', (command) => {
+    expect(findCredentialRead(command)).toBeNull();
+  });
+});
+
+describe('protectBottegaHook on credential reads', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('denies a command that prints a token and logs it', async () => {
+    const result = await protectBottegaHook({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'PowerShell',
+      tool_input: { command: 'gh auth token' },
+      cwd: '/work/task-35',
+    });
+
+    expect(result).toEqual({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: expect.stringMatching(/would print a credential[\s\S]*already logged in/),
+      },
+    });
+    expect(logServerEvent).toHaveBeenCalledWith(
+      'blocked-agent-credential-read',
+      expect.objectContaining({ tool: 'PowerShell', cwd: '/work/task-35' }),
+    );
+  });
+
+  it('denies the Read tool on credential files and allows other reads', async () => {
+    const denied = await protectBottegaHook({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Read',
+      tool_input: { file_path: 'C:\\Users\\u\\.git-credentials' },
+    });
+    expect(denied).toHaveProperty('hookSpecificOutput.permissionDecision', 'deny');
+
+    expect(
+      await protectBottegaHook({ hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: '/work/src/app.ts' } }),
     ).toEqual({});
   });
 });
