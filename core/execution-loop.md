@@ -22,9 +22,12 @@ coordinate **entirely through the task doc**. That one file carries:
 - a **Review Findings** section the review agent writes and the implementation
   agent reads.
 
-This is the whole protocol: implementation checks items off and addresses
-findings; review verifies checked items and rewrites the findings. State lives
-in the document, not in either agent's context.
+- a **Verification Log** the implementation agent writes and the review agent
+  reads: the commit it verified and every check it ran there, with results.
+
+This is the whole protocol: implementation checks items off, addresses findings
+and logs what it verified; review verifies checked items and rewrites the
+findings. State lives in the document, not in either agent's context.
 
 ## The implementation agent
 
@@ -38,6 +41,16 @@ in the document, not in either agent's context.
   this agent so all work stays in one observable conversation rather than
   vanishing into an opaque, hours-long sub-agent. See the `disallowedTools` set
   in [`reference/server/services/agentRunner.ts`](../reference/server/services/agentRunner.ts).
+- **Verifies as it goes.** After each change it runs the targeted tests and the
+  typecheck for the code it touched, and fixes failures in the same
+  conversation, while it still knows why it made the change. Before finishing
+  it runs the fast checks CI runs (lint/format, typecheck, build) and the tests
+  of every package it changed. It does **not** run the project's full suite;
+  the reviewer runs that once.
+- **Commits its work** at the end of each turn, so every review looks at a fixed
+  commit and a re-review can diff against the commit it last reviewed.
+- **Writes the Verification Log** (replacing the previous one): the commit, each
+  check command and its result, and anything it could not run.
 - Ends its turn with **no completion script**. Completion is implicit, so the
   loop chains straight to review.
 
@@ -51,12 +64,24 @@ reviewer's job is to catch that.
   isn't finished. Write Review Findings = `IN_PROGRESS` listing the remaining
   items, stop, and return control to implementation. Don't review half-done
   work or run tests yet.
-- **Full review (all items checked).** Verify **every** checked item against the
-  plan with **strict matching** — "plan said create file X" means file X must
-  exist with that content; an item checked but not actually done is a critical
-  finding. Then run the tests: targeted unit tests first, then the full suite
-  (long suites run in the background), then the manual scenarios from the
-  Testing Strategy.
+- **First full review (all items checked, no earlier NEEDS_WORK).** Verify
+  **every** checked item against the plan with **strict matching** — "plan said
+  create file X" means file X must exist with that content; an item checked but
+  not actually done is a critical finding. Read the Verification Log: checks it
+  records **at the current commit** count as evidence and are not re-run; checks
+  that are missing, failed or logged at another commit, the reviewer runs
+  itself. Then it runs the **full suite once** (in the background) and every
+  manual scenario from the Testing Strategy.
+- **Re-review (previous verdict NEEDS_WORK).** Scope is the previous findings
+  plus the diff since the commit the last review recorded. Re-verify the items
+  that review unchecked and any item whose files the diff touches; run the
+  tests covering the diff and the tests that failed last time; re-run the
+  manual scenarios that failed, were blocked, or exercise changed code. The
+  rest carry over as passed at the earlier commit. The full suite is re-run
+  only if it failed last time or the diff touches code with wide reach
+  (dependencies, build/test config, schema/migrations, shared modules).
+- Every review records the **commit it reviewed** and **where the full suite
+  last passed** in Review Findings, so the next re-review knows its baseline.
 - **Verdict** — exactly one of:
   - **READY** — all items verified, all tests pass → run the completion script
     that sets `workflow_complete`. The loop then enters the finish pipeline
@@ -68,8 +93,21 @@ reviewer's job is to catch that.
   - **BLOCKED** — all agent-doable work is done but remaining items physically
     require a human (a decision, external infra, credentials) → run the script
     that sets `workflow_blocked`. The loop stops until a human resumes.
-- Review **only documents and decides — it never fixes code.**
-- It **replaces** the Review Findings section every time (no history kept).
+- Review **only documents and decides — it never fixes code.** (If the
+  implementation left changes uncommitted, the reviewer commits them as they are
+  so the review has a fixed commit; that is bookkeeping, not a fix.)
+- It **replaces** the Review Findings section every time (no history kept
+  beyond the carried-over scenario results and the two commit markers).
+
+### Why verification is split this way
+
+Most failures are cheapest to fix in the conversation that caused them, where
+the reason for each change is still in context. Sending them to a fresh review,
+then to a fresh implementation turn, costs two cold starts and a long test run
+per bug. What is wasteful is the reviewer re-running checks the implementer
+already passed at the same commit, and re-reviewing a whole task after a
+one-line fix. So the implementer gives fast feedback, the reviewer runs the
+expensive suite once, and re-reviews look only at what changed.
 
 ## How the loop reads all this
 
@@ -95,12 +133,16 @@ keeps the loop dumb and reliable (see
 
 ## What to build
 
-- [ ] The implementation prompt: address findings → implement unchecked items →
-      check them off → never ask questions.
+- [ ] The implementation prompt: address findings → implement unchecked items
+      with targeted checks as it goes → check them off → CI-equivalent fast
+      checks → commit → write the Verification Log → never ask questions.
 - [ ] Disallow sub-agent delegation for the implementation agent.
-- [ ] The review prompt: early-return guard → strict per-item verification →
-      unit + manual tests → READY / NEEDS_WORK / BLOCKED → replace findings,
-      uncheck failed items, never fix code.
+- [ ] The review prompt: early-return guard → first review (strict per-item
+      verification, trust logged checks at the current commit, full suite once,
+      all manual scenarios) or re-review (previous findings + diff since the
+      reviewed commit, targeted tests) → READY / NEEDS_WORK / BLOCKED → replace
+      findings with the reviewed commit and full-suite marker, uncheck failed
+      items, never fix code.
 - [ ] Completion scripts for `workflow_complete` (READY) and `workflow_blocked`
       (BLOCKED).
 

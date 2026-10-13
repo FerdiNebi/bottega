@@ -111,7 +111,12 @@ Every agent run of a task whose project has autopilot enabled gets:
   runs and keep asking.
 - **A stricter READY.** The review agent is told that its READY will be merged
   without a human looking: signal READY only when the project's full test suite
-  passes, not just the tests it added.
+  passes, not just the tests it added. A re-review normally skips the full
+  suite (see [`core/execution-loop.md`](../core/execution-loop.md)); under
+  autopilot, when the repository has no CI workflow that runs the tests on pull
+  requests, the full suite must also have passed **at the commit being marked
+  READY**, because that run is the merge gate. With such a CI, the PR's checks
+  are the gate and the re-review keeps its narrow scope.
 
 The prompt text lives in
 [`reference/server/constants/prompts/autopilot.md`](../reference/server/constants/prompts/autopilot.md).

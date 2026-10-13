@@ -29,9 +29,19 @@ Implementation is still in progress. Proceed with the next unchecked item.
 
   2. **Stop here.** Do not run unit tests, Playwright tests, or any further review steps. Return control to the implementation agent.
 
-- If **all** To-Do items are checked (`[x]`), proceed to Step 2 (full review).
+- If **all** To-Do items are checked (`[x]`), proceed to Step 1b.
+
+### 1b. Pin the Commit and Pick the Review Mode
+1. Run `git status --porcelain`. If the implementation left changes uncommitted, commit them as they are: `git add -A && git commit -m "WIP: uncommitted implementation changes"`. This is bookkeeping so the review has a fixed commit; it is not a code fix.
+2. Record `git rev-parse HEAD` as the **reviewed commit**.
+3. Read the **Verification Log** section, if any. Checks it lists at the reviewed commit are evidence: do NOT re-run them. Checks that are missing, failed, or logged at a different commit, run yourself (targeted, not the full suite).
+4. Pick the mode:
+   - **Re-review** — the existing Review Findings has `**Status:** NEEDS_WORK` and a `**Reviewed commit:**` line. Follow the re-review notes in Steps 2–4.
+   - **First review** — anything else. Follow Steps 2–4 in full.
 
 ### 2. Verify Checked Items Against Plan
+
+**Re-review:** run `git diff <previous reviewed commit>..HEAD --stat` and `git diff <previous reviewed commit>..HEAD`. Re-verify only the items the previous review unchecked and any item whose files the diff touches, and check that every issue under "Issues to Address" was fixed. Items verified last time and untouched by the diff stay VERIFIED.
 
 > **⚠️ Implementation agents often cut corners** — marking items as done when the work is partial,
 > skipping files, or taking shortcuts that deviate from the plan. Your role is quality assurance:
@@ -61,15 +71,24 @@ If ANY checked item fails verification → the final status is NEEDS_WORK, regar
 ```
 
 ### 3. Run Unit Tests
-Run the project's unit tests:
-1. **First run targeted tests** for the files you changed/reviewed (check CLAUDE.md for the test command)
-2. **Then run the full test suite** using `run_in_background: true` on the Bash tool (full suites can take 5-15+ minutes)
+The implementation agent already ran targeted tests and the CI fast checks; the Verification Log says which. Don't repeat those at the same commit.
+
+**First review:**
+1. Run targeted tests only for code you suspect is under-tested, or for checks missing from the Verification Log (check CLAUDE.md for the test command)
+2. Run the **full test suite once**, using `run_in_background: true` on the Bash tool (full suites can take 5-15+ minutes)
 3. Wait for the background task to complete using TaskOutput with `block: true`
-4. **Wait for backgrounded tests** before re-launching — do NOT start parallel test runs, they compete for resources. Only re-run after the previous one completes
+4. Do NOT re-run the full suite in the same review unless that run was broken by the environment (not by a test failure). Do NOT start parallel test runs, they compete for resources
+
+**Re-review:**
+1. Run the tests that cover the files in the diff, plus any tests that failed in the previous review
+2. Re-run the full suite only if it failed in the previous review, or the diff touches code with wide reach: dependencies or lockfiles, build/test config, DB schema or migrations, or shared modules imported across the project. Otherwise carry over the previous `**Full suite:**` result
+
 - Report any failures or issues found
 
 ### 4. Manual Testing with Playwright MCP
 Follow the manual testing scenarios from the Testing Strategy section.
+
+**Re-review:** re-run only the scenarios that failed or were blocked last time, and those that exercise code in the diff. Mark the others `PASS (carried over from <previous reviewed commit>)`. Skip starting a server and recording video if no scenario needs re-running.
 
 **CRITICAL: Server Isolation Rules**
 - Your task-specific port is in the Testing Configuration section of your system prompt
@@ -99,7 +118,7 @@ Testing steps:
 
 - The Testing Strategy was defined during planification and approved by the user
 - You MUST NOT skip, declare "out of scope", or rationalize away any test
-- Every scenario must be either: PASS, FAIL, or BLOCKED
+- Every scenario must be either: PASS, FAIL, or BLOCKED (a re-review's carried-over PASS counts as PASS)
 - If you cannot perform a test for ANY reason (missing access, unclear steps, dependencies), mark the task as BLOCKED - do NOT mark the test as "skipped"
 
 ### 5. Evaluate Completion Status
@@ -142,6 +161,7 @@ Update the task documentation file at `{{taskDocPath}}`:
 - If a "Review Findings" section already exists, REPLACE it entirely with your new findings
 - Do NOT append to previous findings or keep history
 - Each review should completely overwrite the previous review
+- Always include the `**Reviewed commit:**` and `**Full suite:**` lines; the next re-review uses them as its baseline
 
 #### If NEEDS_WORK:
 1. **REPLACE** the entire "Review Findings" section with:
@@ -150,6 +170,8 @@ Update the task documentation file at `{{taskDocPath}}`:
 ## Review Findings
 
 **Status:** NEEDS_WORK
+**Reviewed commit:** <sha from Step 1b>
+**Full suite:** PASS at <sha> / FAIL at <sha> / not run
 
 ### Unit Tests
 - Result: [PASS/FAIL]
@@ -168,14 +190,15 @@ Update the task documentation file at `{{taskDocPath}}`:
    - This allows the implementation agent to retry
 
 #### If READY:
-1. **Run the completion command** to signal the workflow is complete:
+1. **REPLACE** the "Review Findings" section with `**Status:** READY`, the `**Reviewed commit:**` and `**Full suite:**` lines, and a short summary of what you verified
+2. **Run the completion command** to signal the workflow is complete:
 ```bash
 tsx {{scriptsDir}}/complete-workflow.ts {{taskId}}
 ```
 This stops the automated agent loop and awaits final user review.
 
 #### If BLOCKED:
-1. **Update the "Review Findings" section** explaining what is blocking progress and what user action is needed
+1. **Update the "Review Findings" section** explaining what is blocking progress and what user action is needed, with the `**Reviewed commit:**` and `**Full suite:**` lines
 2. **Run the block command** to pause the workflow:
 ```bash
 tsx {{scriptsDir}}/block-workflow.ts {{taskId}}
@@ -183,7 +206,7 @@ tsx {{scriptsDir}}/block-workflow.ts {{taskId}}
 This stops the automated agent loop until the user resumes it after providing the needed input.
 
 ## Important Constraints
-- Do NOT fix any code or specs - only document findings
+- Do NOT fix any code or specs - only document findings (committing uncommitted implementation changes in Step 1b is the only commit you make)
 - Do NOT implement anything - only review and test
 - You are only allowed to restart processes such as web servers when necessary, especially for playwright tests.
 - **ALWAYS REPLACE (never append to) the Review Findings section**
