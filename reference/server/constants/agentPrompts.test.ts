@@ -274,16 +274,28 @@ describe('PR procedure: rebase first, never wait on a conflicting PR', () => {
     expect(msg).toContain('git push --force-with-lease');
   });
 
-  it('checks for conflicts before and while waiting on CI', async () => {
+  it('checks for conflicts before waiting on CI', async () => {
     for (const msg of [
       await generatePrAgentMessage('/t.md', 1, null, 'main'),
       await generateYoloMessage('/t.md', 1, null, 'main'),
     ]) {
       const conflictCheck = msg.indexOf('gh pr view --json mergeable --jq .mergeable');
       expect(conflictCheck).toBeGreaterThan(-1);
-      expect(conflictCheck).toBeLessThan(msg.indexOf('gh pr checks'));
+      expect(conflictCheck).toBeLessThan(msg.indexOf('gh run watch'));
       expect(msg).toMatch(/GitHub does not run CI on a conflicting PR/);
-      expect(msg).toMatch(/if it turns `CONFLICTING`, go to step 4/);
+    }
+  });
+
+  it('waits on CI with one blocking watch, not a sleep-polling loop', async () => {
+    for (const msg of [
+      await generatePrAgentMessage('/t.md', 1, null, 'main'),
+      await generateYoloMessage('/t.md', 1, null, 'main'),
+    ]) {
+      expect(msg).toContain('gh run watch "$id" --exit-status');
+      expect(msg).toContain('echo "CI: none"');
+      expect(msg).toMatch(/do NOT write your own polling or `sleep` loop/);
+      expect(msg).not.toContain('sleep 30');
+      expect(msg).not.toMatch(/python3? -c/);
     }
   });
 
