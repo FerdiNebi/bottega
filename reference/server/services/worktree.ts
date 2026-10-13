@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import { runCommand } from './shell.js';
+import { stopProcessesInDir } from './worktreeProcesses.js';
 import { assertValidBranchName } from './validators.js';
 
 /**
@@ -299,6 +300,8 @@ export interface RemoveWorktreeResult {
  * `--force`.
  */
 async function deleteWorktreeDir(repoPath: string, worktreePath: string): Promise<void> {
+  // Dev servers an agent left running keep files open (EBUSY on Windows).
+  await stopProcessesInDir(worktreePath);
   try {
     await runCommand('git', ['worktree', 'remove', worktreePath, '--force'], { cwd: repoPath });
     return;
