@@ -6,7 +6,7 @@
  */
 
 import React, { useState, type ComponentType } from 'react';
-import { Play, Check, Loader2, FileText, Code, CheckCircle, MessageCircle, AlertCircle, GitPullRequest, Sparkles, Zap } from 'lucide-react';
+import { Play, Check, Loader2, FileText, Code, CheckCircle, MessageCircle, AlertCircle, GitPullRequest, Sparkles, Zap, BookOpen } from 'lucide-react';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
 import type { AgentRunRow, AgentType } from '../../shared/types/db';
@@ -46,6 +46,12 @@ const AGENT_TYPES: AgentConfig[] = [
     label: 'Refinement',
     description: 'Simplify code and fix security issues',
     icon: Sparkles
+  },
+  {
+    type: 'learnings',
+    label: 'Learnings',
+    description: 'Record what this task taught in CLAUDE.md',
+    icon: BookOpen
   },
   {
     type: 'pr',

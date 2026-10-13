@@ -45,6 +45,7 @@ export const AGENT_TYPES_WITH_SETTINGS: readonly AgentType[] = [
   'planification',
   'implementation',
   'refinement',
+  'learnings',
   'review',
   'pr',
   'yolo',
@@ -58,13 +59,14 @@ export const DEFAULT_AGENT_MODEL_SETTINGS: AgentModelSettings = {
   planification: { provider: 'anthropic', model: 'opus', effort: 'high' },
   implementation: { provider: 'anthropic', model: 'opus', effort: 'high' },
   refinement: { provider: 'anthropic', model: 'opus', effort: 'high' },
+  learnings: { provider: 'anthropic', model: 'opus', effort: 'high' },
   review: { provider: 'anthropic', model: 'opus', effort: 'high' },
   pr: { provider: 'anthropic', model: 'opus', effort: 'high' },
   yolo: { provider: 'anthropic', model: 'opus', effort: 'high' },
 };
 
 // First-connect seed defaults (chosen with the user): a new user who connects
-// a provider gets all six agents pointed at that provider's default model.
+// a provider gets every agent pointed at that provider's default model.
 //   - anthropic → Sonnet
 //   - openai (Codex) → GPT-5.5
 //   - opencode → the FIRST entry of the user's live Zen catalog (resolved at
@@ -94,7 +96,7 @@ export function defaultSettingForProvider(
 }
 
 /**
- * Build a full per-user settings map (all six agents) seeded to one provider's
+ * Build a full per-user settings map (every agent) seeded to one provider's
  * default. Returns `null` when the provider can't be defaulted (opencode with
  * no live model id) so the caller declines to seed.
  */

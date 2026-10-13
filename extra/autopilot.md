@@ -88,7 +88,7 @@ conflicts. Start returns 409 when any task in the project has a running agent.
    |---|---|
    | `yolo_mode` and not `pr_agent_complete` | `yolo` |
    | `pr_agent_complete` | go straight to [Finishing a task](#finishing-a-task) |
-   | `workflow_complete` | the finish pipeline (refinement → PR, see below) |
+   | `workflow_complete` | the finish pipeline (refinement → learnings → PR, see below) |
    | `planification_complete` | `implementation` |
    | otherwise | `planification` |
 
@@ -131,7 +131,7 @@ enabled:
   implementation (the plan gate is skipped, as for non-technical users in
   [`auth-and-multi-user.md`](./auth-and-multi-user.md)). If the planner ended
   without completing the plan, stop.
-- **Finish pipeline:** refinement runs as usual. Then, if the project has no
+- **Finish pipeline:** refinement and then learnings run as usual. Then, if the project has no
   `origin` remote, there is nowhere to open a PR: skip the PR agent and go to
   [Finishing a task](#finishing-a-task). Otherwise start the PR agent as usual.
 - **After the PR agent or a `yolo` run** (both terminal in core): go to

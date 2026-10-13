@@ -618,9 +618,11 @@ router.put(
           );
         }
         tasksDb.markRefinementComplete(taskId);
+        tasksDb.markLearningsComplete(taskId);
         tasksDb.markPrAgentComplete(taskId);
       } else {
         tasksDb.resetRefinementComplete(taskId);
+        tasksDb.resetLearningsComplete(taskId);
       }
 
       const updatedTask = tasksDb.getById(taskId);

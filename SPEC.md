@@ -83,6 +83,7 @@ Opinionated features. Each is independent; implement what you want.
 | [`extra/project-bootstrap.md`](./extra/project-bootstrap.md) | Guided sessions that interview you into a `PRD.md` and an `ARD.md`, then turn them into dependency-leveled tasks. Another task source, like the board. |
 | [`extra/autopilot.md`](./extra/autopilot.md) | One checkbox: run a project's tasks in dependency order through the whole pipeline, with no questions, auto-merging each when the tests pass. |
 | [`extra/refinement-agent.md`](./extra/refinement-agent.md) | An extra agent that polishes the work between review and PR. |
+| [`extra/learnings-agent.md`](./extra/learnings-agent.md) | A last pass before the PR that records what the task changed and taught into a Bottega-managed section of the project's `CLAUDE.md`, so later tasks start with it. |
 | [`extra/yolo-mode.md`](./extra/yolo-mode.md) | A single-agent alternative to the multi-step pipeline. |
 | [`extra/pr-comment-retrigger.md`](./extra/pr-comment-retrigger.md) | Re-run the PR agent automatically when a PR receives review comments (GitHub webhook). |
 | [`extra/prompt-and-model-customization.md`](./extra/prompt-and-model-customization.md) | Per-agent prompt overrides and per-user model/effort selection. |

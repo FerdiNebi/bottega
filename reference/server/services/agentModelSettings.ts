@@ -42,7 +42,7 @@ export class MissingUserAgentSettingsError extends Error {
 
 /**
  * Load a user's full per-agent settings. Throws `MissingUserAgentSettingsError`
- * when the row is absent or any of the six agents is missing/invalid — callers
+ * when the row is absent or any agent is missing/invalid — callers
  * must not get a silent default.
  */
 export function loadAgentModelSettings(userId: number): AgentModelSettings {
@@ -89,7 +89,7 @@ export function loadAgentModelSettings(userId: number): AgentModelSettings {
   return result;
 }
 
-/** Persist a user's full per-agent settings (caller supplies all six). */
+/** Persist a user's full per-agent settings (caller supplies every agent). */
 export function saveAgentModelSettings(userId: number, settings: AgentModelSettings): void {
   userAgentModelSettingsDb.set(userId, JSON.stringify(settings));
 }

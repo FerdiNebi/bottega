@@ -5,6 +5,7 @@ vi.mock('../../database/db.js', () => ({
     getById: vi.fn(),
     getWithProject: vi.fn(),
     markRefinementComplete: vi.fn(),
+    markLearningsComplete: vi.fn(),
     blockWorkflow: vi.fn()
   },
   agentRunsDb: {
@@ -268,20 +269,51 @@ describe('buildAgentRunCompletionHandler', () => {
     expect(startAgentRun).toHaveBeenCalledWith(7, 'refinement', expect.any(Object));
   });
 
-  it('marks refinement complete and chains to PR when worktree exists', async () => {
+  it('marks refinement complete and chains to learnings', async () => {
     const c = ctx();
     vi.mocked(agentRunsDb.getByTask).mockReturnValue([
       { id: 9, conversation_id: 100, agent_type: 'refinement', status: 'running' }
     ] as never);
-    vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, workflow_complete: true, refinement_complete: false, pr_agent_complete: false } as never);
-    vi.mocked(tasksDb.getWithProject).mockReturnValue({ repo_folder_path: '/r', user_id: 1 } as never);
-    vi.mocked(worktreeExists).mockResolvedValue(true);
+    vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, workflow_complete: true, refinement_complete: false, learnings_complete: false, pr_agent_complete: false } as never);
 
     await buildAgentRunCompletionHandler(c)();
     expect(tasksDb.markRefinementComplete).toHaveBeenCalledWith(7);
 
     await vi.advanceTimersByTimeAsync(1000);
+    expect(startAgentRun).toHaveBeenCalledWith(7, 'learnings', expect.any(Object));
+    expect(startAgentRun).not.toHaveBeenCalledWith(7, 'pr', expect.any(Object));
+  });
+
+  it('marks learnings complete and chains to PR when worktree exists', async () => {
+    const c = ctx();
+    vi.mocked(agentRunsDb.getByTask).mockReturnValue([
+      { id: 9, conversation_id: 100, agent_type: 'learnings', status: 'running' }
+    ] as never);
+    vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, workflow_complete: true, refinement_complete: true, learnings_complete: false, pr_agent_complete: false } as never);
+    vi.mocked(tasksDb.getWithProject).mockReturnValue({ repo_folder_path: '/r', user_id: 1 } as never);
+    vi.mocked(worktreeExists).mockResolvedValue(true);
+
+    await buildAgentRunCompletionHandler(c)();
+    expect(tasksDb.markLearningsComplete).toHaveBeenCalledWith(7);
+
+    await vi.advanceTimersByTimeAsync(1000);
     expect(startAgentRun).toHaveBeenCalledWith(7, 'pr', expect.any(Object));
+  });
+
+  it('runs learnings at most once: goes to PR when it is already complete', async () => {
+    const c = ctx();
+    vi.mocked(agentRunsDb.getByTask).mockReturnValue([
+      { id: 9, conversation_id: 100, agent_type: 'review', status: 'running' }
+    ] as never);
+    vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, workflow_complete: true, refinement_complete: true, learnings_complete: true, pr_agent_complete: false } as never);
+    vi.mocked(tasksDb.getWithProject).mockReturnValue({ repo_folder_path: '/r', user_id: 1 } as never);
+    vi.mocked(worktreeExists).mockResolvedValue(true);
+
+    await buildAgentRunCompletionHandler(c)();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(startAgentRun).toHaveBeenCalledWith(7, 'pr', expect.any(Object));
+    expect(startAgentRun).not.toHaveBeenCalledWith(7, 'learnings', expect.any(Object));
   });
 
   it('blocks the workflow when run count hits MAX_WORKFLOW_RUNS', async () => {
@@ -459,8 +491,8 @@ describe('autopilot hooks (extra/autopilot.md)', () => {
 
   it('merges instead of starting the PR agent when there is no remote', async () => {
     const c = ctx();
-    runs('refinement');
-    vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, project_id: 3, workflow_complete: true, refinement_complete: false, pr_agent_complete: false } as never);
+    runs('learnings');
+    vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, project_id: 3, workflow_complete: true, refinement_complete: true, learnings_complete: false, pr_agent_complete: false } as never);
     vi.mocked(tasksDb.getWithProject).mockReturnValue({ repo_folder_path: '/r', user_id: 1 } as never);
     vi.mocked(worktreeExists).mockResolvedValue(true);
     vi.mocked(shouldSkipPrAgent).mockResolvedValue(true);

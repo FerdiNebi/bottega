@@ -32,7 +32,9 @@ front of** the PR check:
   (sets `refinement_complete`) and fall through to the PR check, which now
   starts the PR agent.
 
-So a single refinement run is threaded in: review → refinement → PR. The
+So a single refinement run is threaded in: review → refinement → PR (with
+the [learnings extra](./learnings-agent.md), review → refinement → learnings
+→ PR; the PR check below is then reached after learnings). The
 ordering is the whole trick — the refinement check sits between the
 `workflow_complete` gate and the `pr_agent_complete` gate, the same way core's
 PR check does. Refinement is one of the agent types that the completion handler

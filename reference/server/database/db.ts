@@ -132,6 +132,35 @@ export function backfillUserAgentModelSettings(database: Database.Database): voi
     .run();
 }
 
+/**
+ * The learnings agent was added after users had saved their per-agent
+ * settings, and `loadAgentModelSettings` rejects a row missing any agent. Give
+ * every row without a `learnings` entry a copy of its `refinement` entry
+ * (the closest stage: it also runs once, after review). Rows that can't be
+ * parsed or have no refinement entry are left alone. Exported for testing.
+ */
+export function backfillLearningsAgentSetting(database: Database.Database): void {
+  const rows = database
+    .prepare('SELECT user_id, settings_json FROM user_agent_model_settings')
+    .all() as { user_id: number; settings_json: string }[];
+  const update = database.prepare(
+    'UPDATE user_agent_model_settings SET settings_json = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?',
+  );
+  for (const row of rows) {
+    let settings: unknown;
+    try {
+      settings = JSON.parse(row.settings_json);
+    } catch {
+      continue;
+    }
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) continue;
+    const blob = settings as Record<string, unknown>;
+    if ('learnings' in blob || !blob.refinement) continue;
+    console.log(`Running migration: Adding learnings agent setting for user ${row.user_id}`);
+    update.run(JSON.stringify({ ...blob, learnings: blob.refinement }), row.user_id);
+  }
+}
+
 const runMigrations = (): void => {
   try {
     const tableInfo = db.prepare('PRAGMA table_info(users)').all() as ColumnInfoRow[];
@@ -204,6 +233,11 @@ const runMigrations = (): void => {
     if (!taskColumnNames.includes('refinement_complete')) {
       console.log('Running migration: Adding refinement_complete column to tasks');
       db.exec('ALTER TABLE tasks ADD COLUMN refinement_complete INTEGER DEFAULT 0 NOT NULL');
+    }
+
+    if (!taskColumnNames.includes('learnings_complete')) {
+      console.log('Running migration: Adding learnings_complete column to tasks');
+      db.exec('ALTER TABLE tasks ADD COLUMN learnings_complete INTEGER DEFAULT 0 NOT NULL');
     }
 
     if (!taskColumnNames.includes('yolo_mode')) {
@@ -431,6 +465,40 @@ const runMigrations = (): void => {
       db.exec("ALTER TABLE task_agent_runs ADD COLUMN provider TEXT NOT NULL DEFAULT 'anthropic'");
     }
 
+    // Must run after the provider column exists: the rebuild copies named
+    // columns, so it keeps every column the table has by now.
+    try {
+      const checkAgentType = db
+        .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='task_agent_runs'`)
+        .get() as { sql: string } | undefined;
+
+      if (checkAgentType && !checkAgentType.sql.includes("'learnings'")) {
+        console.log('Running migration: Adding learnings agent type to task_agent_runs');
+        db.exec(`
+          CREATE TABLE task_agent_runs_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL,
+            agent_type TEXT NOT NULL CHECK(agent_type IN ('planification', 'implementation', 'refinement', 'learnings', 'review', 'pr', 'yolo')),
+            status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'running', 'completed', 'failed', 'blocked')),
+            conversation_id INTEGER,
+            provider TEXT NOT NULL DEFAULT 'anthropic',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            completed_at DATETIME,
+            FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
+          );
+          INSERT INTO task_agent_runs_new (id, task_id, agent_type, status, conversation_id, provider, created_at, completed_at)
+            SELECT id, task_id, agent_type, status, conversation_id, provider, created_at, completed_at FROM task_agent_runs;
+          DROP TABLE task_agent_runs;
+          ALTER TABLE task_agent_runs_new RENAME TO task_agent_runs;
+          CREATE INDEX idx_task_agent_runs_task_id ON task_agent_runs(task_id);
+        `);
+      }
+    } catch (migrationError) {
+      const message = migrationError instanceof Error ? migrationError.message : String(migrationError);
+      console.error('Error migrating task_agent_runs for learnings agent type:', message);
+    }
+
     const projectsTableInfo = db
       .prepare('PRAGMA table_info(projects)')
       .all() as ColumnInfoRow[];
@@ -559,6 +627,7 @@ const runMigrations = (): void => {
     `);
 
     backfillUserAgentModelSettings(db);
+    backfillLearningsAgentSetting(db);
 
     console.log('Database migrations completed successfully');
   } catch (error) {
@@ -1034,6 +1103,7 @@ export interface TaskUpdates {
   workflow_complete?: 0 | 1 | boolean;
   planification_complete?: 0 | 1 | boolean;
   refinement_complete?: 0 | 1 | boolean;
+  learnings_complete?: 0 | 1 | boolean;
   completed_at?: string | null;
   yolo_mode?: 0 | 1 | boolean;
 }
@@ -1112,6 +1182,7 @@ const tasksDb = {
       'workflow_complete',
       'planification_complete',
       'refinement_complete',
+      'learnings_complete',
       'completed_at',
       'yolo_mode',
     ];
@@ -1246,6 +1317,24 @@ const tasksDb = {
     db.prepare(
       `UPDATE tasks
        SET refinement_complete = 0, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    ).run(id);
+    return tasksDb.getById(id);
+  },
+
+  markLearningsComplete: (id: number): TaskRow | undefined => {
+    db.prepare(
+      `UPDATE tasks
+       SET learnings_complete = 1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    ).run(id);
+    return tasksDb.getById(id);
+  },
+
+  resetLearningsComplete: (id: number): TaskRow | undefined => {
+    db.prepare(
+      `UPDATE tasks
+       SET learnings_complete = 0, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`
     ).run(id);
     return tasksDb.getById(id);

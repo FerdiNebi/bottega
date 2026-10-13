@@ -110,6 +110,15 @@ export async function generateRefinementMessage(
   return renderPrompt('refinement', { taskDocPath, taskId });
 }
 
+export async function generateLearningsMessage(
+  taskDocPath: string,
+  taskId: number,
+  runDigest: string,
+  baseBranch: string,
+): Promise<string> {
+  return renderPrompt('learnings', { taskDocPath, taskId, runDigest, baseBranch });
+}
+
 export async function generatePrAgentMessage(
   taskDocPath: string,
   taskId: number,
@@ -258,6 +267,7 @@ export const AGENT_TYPE = {
   PLANIFICATION: 'planification',
   IMPLEMENTATION: 'implementation',
   REFINEMENT: 'refinement',
+  LEARNINGS: 'learnings',
   REVIEW: 'review',
   PR: 'pr',
 } as const;

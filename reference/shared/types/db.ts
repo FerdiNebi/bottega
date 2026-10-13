@@ -26,6 +26,7 @@ export type AgentType =
   | 'planification'
   | 'implementation'
   | 'refinement'
+  | 'learnings'
   | 'review'
   | 'pr'
   | 'yolo';
@@ -103,6 +104,7 @@ export interface TaskRow {
   planification_complete: SqliteBoolean;
   pr_agent_complete: SqliteBoolean;
   refinement_complete: SqliteBoolean;
+  learnings_complete: SqliteBoolean;
   yolo_mode: SqliteBoolean;
   completed_at: string | null;
   created_at: string;

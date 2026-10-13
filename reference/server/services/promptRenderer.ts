@@ -102,6 +102,13 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     variables: ['taskDocPath', 'taskId'],
   },
   {
+    name: 'learnings',
+    label: 'Learnings',
+    kind: 'prompt',
+    file: 'learnings.md',
+    variables: ['taskDocPath', 'taskId', 'runDigest', 'baseBranch'],
+  },
+  {
     name: 'pr',
     label: 'PR Agent',
     kind: 'prompt',
