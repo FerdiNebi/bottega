@@ -185,13 +185,27 @@ and the obvious "pass success/failure into the handler" design is the wrong one.
   the server and every run with it. Tell agents in their context which ports
   and PIDs belong to the server and to use their own dev-server port instead.
   Where the harness supports it, refuse such commands before they run: the
-  reference installs a Claude SDK `PreToolUse` hook on `Bash|PowerShell` that
+  reference installs a Claude SDK `PreToolUse` hook on `Bash|PowerShell|Read` that
   denies a kill command mentioning a server port or PID, or killing `node`/`tsx`
   processes by name. The same hook (on `Edit|Write|MultiEdit|NotebookEdit`)
   refuses edits to the orchestrator's own files unless the agent is working
   inside that repository: an agent asked to "make it merge automatically"
   once rewrote the orchestrator's completion script mid-task. See
   [`reference/server/services/processGuard.ts`](../reference/server/services/processGuard.ts).
+- **Agents must not print credentials.** Agents run as the same OS user as
+  the person who installed the orchestrator, so they can read that user's
+  GitHub login and the per-user harness tokens — and whatever a command prints
+  lands in the stored transcript. Agents never need the raw values: `gh` and
+  `git` authenticate themselves. Tell agents so in their context, and where the
+  harness supports it refuse such commands before they run: the same
+  `PreToolUse` hook denies `gh auth token` / `gh auth status --show-token`,
+  `git credential fill|get`, anything touching `.git-credentials` or the
+  orchestrator's per-user credential folder, expanding or `printenv`-ing token
+  variables (`GH_TOKEN`, `GITHUB_TOKEN`, `*_API_KEY`, `*_OAUTH_TOKEN`, …), and
+  dumping the whole environment (`env`, `printenv`, `Get-ChildItem env:`), and
+  (on `Read`) opening `.git-credentials` or the credential folder. It
+  is coarse on purpose and only covers the Claude harness; other harnesses rely
+  on the context warning.
 - **Leave a trail when the server dies.** A forced kill runs no handler, so
   keep a heartbeat in a state file and record clean exits. When the next start
   finds no clean exit, log when the old server was last alive and the

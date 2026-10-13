@@ -1,6 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { buildBaseSpawnEnv } from './baseSpawnEnv.js';
 
 const DEFAULT_CLAUDE_CONFIG_ROOT = path.join(os.homedir(), '.config', 'bottega', 'users');
 const TOKEN_FILE_NAME = 'oauth_token';
@@ -246,6 +247,7 @@ export function buildClaudeSdkEnv(userId: number | string | undefined): ClaudeSd
   const { token } = readClaudeOAuthToken(userId);
 
   return {
+    ...buildBaseSpawnEnv(),
     CLAUDE_CODE_OAUTH_TOKEN: token,
     HOME: process.env.HOME,
     PATH: process.env.PATH,

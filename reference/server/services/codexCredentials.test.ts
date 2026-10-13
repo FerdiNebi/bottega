@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -148,6 +148,15 @@ describe('codexCredentials', () => {
     expect(env['OPENAI_ORG_ID']).toBeUndefined();
     expect(env['CODEX_API_KEY']).toBeUndefined();
     expect(env['HOME']).toBe(process.env['HOME']);
+  });
+
+  it('buildCodexSdkEnv passes OS profile/shell vars through', () => {
+    vi.stubEnv('APPDATA', 'C:\\Users\\u\\AppData\\Roaming');
+    try {
+      expect(buildCodexSdkEnv(42)['APPDATA']).toBe('C:\\Users\\u\\AppData\\Roaming');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('cross-user isolation: user 1 status reports its own credential, user 2 reads as missing', async () => {

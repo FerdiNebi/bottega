@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -130,6 +130,19 @@ describe('claudeCredentials', () => {
       ANTHROPIC_AUTH_TOKEN: undefined
     }));
     expect(env).not.toHaveProperty('CLAUDE_CONFIG_DIR');
+  });
+
+  it('passes OS profile/shell vars through to the SDK env so Windows CLIs like gh work', () => {
+    provisionToken(42, 'sk-ant-oat01-sdk-token');
+    vi.stubEnv('APPDATA', 'C:\\Users\\u\\AppData\\Roaming');
+    vi.stubEnv('PATHEXT', '.COM;.EXE');
+    try {
+      const env = buildClaudeSdkEnv(42);
+      expect(env.APPDATA).toBe('C:\\Users\\u\\AppData\\Roaming');
+      expect(env.PATHEXT).toBe('.COM;.EXE');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('builds spawn env with the per-user OAuth token and strips inherited auth vars', () => {

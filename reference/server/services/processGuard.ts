@@ -1,4 +1,5 @@
-// Keeps agents from killing Bottega itself.
+// Keeps agents from killing Bottega itself, editing its files, or printing
+// credentials into their transcript.
 //
 // Agents share the machine with the Bottega server. When an app under
 // development wants the same port (3001 is a common default), an agent that
@@ -83,6 +84,69 @@ export function protectedKillDenyMessage(reason: string): string {
   );
 }
 
+// Credentials agents could print into their transcript. Agents run as the
+// same OS user as the person who installed Bottega, so they can read that
+// user's GitHub login and the per-user harness tokens; one PR agent ran
+// `git credential fill` and pasted the PAT into curl. They never need the raw
+// values — `gh` and `git` authenticate themselves.
+const TOKEN_VAR = String.raw`(?:GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN|\w*_API_KEY|\w*_OAUTH_TOKEN|\w*_AUTH_TOKEN|\w*_ACCESS_TOKEN)\b`;
+const EXE_END = String.raw`(?:\.exe)?['"]?`;
+const GIT_CREDENTIALS_FILE = /\.git-credentials\b/i;
+const BOTTEGA_CREDENTIAL_FILES = /bottega[\\/]+users\b|\boauth_token\b/i;
+
+const CREDENTIAL_READS: Array<[RegExp, string]> = [
+  [new RegExp(String.raw`\bgh${EXE_END}\s+auth\s+token\b`, 'i'), '`gh auth token` prints your GitHub token'],
+  [
+    new RegExp(String.raw`\bgh${EXE_END}\s+auth\s+status\b[^|;\n]*(?:\s-t\b|--show-token)`, 'i'),
+    '`gh auth status --show-token` prints your GitHub token',
+  ],
+  [
+    new RegExp(
+      String.raw`\bgit${EXE_END}\s[^|;\n]*\bcredential(?:-[\w-]+)?\s+(?:fill|get)\b|\bgit-credential-[\w-]+${EXE_END}\s+get\b`,
+      'i',
+    ),
+    'it asks git for your stored password/token',
+  ],
+  [GIT_CREDENTIALS_FILE, '~/.git-credentials holds your Git password/token in plain text'],
+  [BOTTEGA_CREDENTIAL_FILES, "it reads Bottega's per-user credential files"],
+  [
+    new RegExp(
+      String.raw`(?:\$\{?|\$env:|%)${TOKEN_VAR}|\bprintenv\s+${TOKEN_VAR}|GetEnvironmentVariable\s*\(\s*['"]${TOKEN_VAR}`,
+      'i',
+    ),
+    'it prints a token environment variable',
+  ],
+  [
+    new RegExp(
+      [
+        String.raw`(?:^|[|;&(]\s*)(?:env|printenv|set|export\s+-p|declare\s+-x)\s*(?=$|[|;&>)])`,
+        String.raw`/c\s+set\s*(?=$|[|;&>"')])`,
+        String.raw`\b(?:get-childitem|gci|dir|ls|get-item|gi)\s+(?:-path\s+)?env:(?:\*|\\)?(?=\s|$|[|;)])`,
+        String.raw`GetEnvironmentVariables\s*\(`,
+        String.raw`/proc/\S*environ\b`,
+      ].join('|'),
+      'im',
+    ),
+    'it dumps the whole environment, tokens included',
+  ],
+];
+
+/** Why `command` would print a credential, or null when it looks safe. */
+export function findCredentialRead(command: string): string | null {
+  for (const [pattern, reason] of CREDENTIAL_READS) {
+    if (pattern.test(command)) return reason;
+  }
+  return null;
+}
+
+export function credentialReadDenyMessage(reason: string): string {
+  return (
+    `Blocked: this command would print a credential into the conversation — ${reason}. ` +
+    `You never need raw tokens: \`gh\` and \`git\` are already logged in, so run them directly. ` +
+    `If they fail to authenticate, say so in your reply and stop instead of looking for credentials.`
+  );
+}
+
 interface PreToolUseInput {
   hook_event_name: string;
   tool_name?: string;
@@ -133,6 +197,19 @@ export function protectBottegaHook(input: PreToolUseInput): Promise<Record<strin
   if (input.hook_event_name !== 'PreToolUse') return Promise.resolve({});
   const toolInput = (input.tool_input ?? {}) as { command?: unknown; file_path?: unknown; notebook_path?: unknown };
 
+  if (input.tool_name === 'Read') {
+    const filePath = toolInput.file_path;
+    if (typeof filePath !== 'string') return Promise.resolve({});
+    const credentialReason = GIT_CREDENTIALS_FILE.test(filePath)
+      ? '~/.git-credentials holds your Git password/token in plain text'
+      : BOTTEGA_CREDENTIAL_FILES.test(filePath)
+        ? "it is one of Bottega's per-user credential files"
+        : null;
+    if (!credentialReason) return Promise.resolve({});
+    logServerEvent('blocked-agent-credential-read', { tool: 'Read', cwd: input.cwd, reason: credentialReason, filePath });
+    return Promise.resolve(deny(credentialReadDenyMessage(credentialReason)));
+  }
+
   if (input.tool_name && EDIT_TOOLS.has(input.tool_name)) {
     const filePath = toolInput.file_path ?? toolInput.notebook_path;
     if (typeof filePath !== 'string' || !editsBottegaFiles(filePath, input.cwd)) return Promise.resolve({});
@@ -148,6 +225,17 @@ export function protectBottegaHook(input: PreToolUseInput): Promise<Record<strin
   const command = toolInput.command;
   if (typeof command !== 'string') return Promise.resolve({});
 
+  const credentialReason = findCredentialRead(command);
+  if (credentialReason) {
+    logServerEvent('blocked-agent-credential-read', {
+      tool: input.tool_name,
+      cwd: input.cwd,
+      reason: credentialReason,
+      command: command.slice(0, 500),
+    });
+    return Promise.resolve(deny(credentialReadDenyMessage(credentialReason)));
+  }
+
   const reason = findProtectedKill(command);
   if (!reason) return Promise.resolve({});
 
@@ -160,5 +248,5 @@ export function protectBottegaHook(input: PreToolUseInput): Promise<Record<strin
   return Promise.resolve(deny(protectedKillDenyMessage(reason)));
 }
 
-export const PROTECT_BOTTEGA_MATCHER = 'Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit';
+export const PROTECT_BOTTEGA_MATCHER = 'Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit|Read';
 
