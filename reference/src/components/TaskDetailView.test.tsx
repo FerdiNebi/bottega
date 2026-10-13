@@ -165,6 +165,7 @@ vi.mock('lucide-react', () => ({
   MessageCircle: () => <span data-testid="icon-message-circle" />,
   GitPullRequest: () => <span data-testid="icon-git-pull-request" />,
   Sparkles: () => <span data-testid="icon-sparkles" />,
+  BookOpen: () => <span data-testid="icon-book-open" />,
   Zap: () => <span data-testid="icon-zap" />,
 }));
 

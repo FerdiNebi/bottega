@@ -10,7 +10,7 @@ The app uses a **task-driven development model**:
 - **Task** — a unit of work with markdown documentation, its own git worktree, and workflow flags that gate the agentic loop.
 - **Conversation** — a Claude session linked to a task. Manual chats and agent runs both create conversations.
 
-Users create projects, define tasks, and either chat with Claude scoped to a task or launch automated agents that plan → implement → review → refine → PR with optional GitHub-webhook re-triggering on PR comments.
+Users create projects, define tasks, and either chat with Claude scoped to a task or launch automated agents that plan → implement → review → refine → record learnings in the project's CLAUDE.md → PR with optional GitHub-webhook re-triggering on PR comments.
 
 ## Architecture at a glance
 
@@ -64,7 +64,7 @@ This directory is organized by architectural concern. Pull whichever file matche
 | **[`claude-sdk-integration.md`](./claude-sdk-integration.md)** | Anything touching the Claude Agent SDK: transcript storage, per-user OAuth, `query()` options, the `AskUserQuestion` tool, the stale-subprocess 401 recovery. |
 | **[`opencode-sdk-integration.md`](./opencode-sdk-integration.md)** | Anything touching OpenCode: Zen auth, per-user `opencode serve` pool, session model, event mapping, REST routes. |
 | **[`conversation-management.md`](./conversation-management.md)** | Conversation lifecycle (start / resume / abort), WebSocket streaming, history loading, context-usage, title generation, slash commands, file attachments, voice input, the chat UI. |
-| **[`agentic-loop.md`](./agentic-loop.md)** | The six agent types, the auto-chaining state machine, YOLO mode, prompt templates + user overrides, per-agent model+effort, git worktrees, GitHub webhook callbacks. |
+| **[`agentic-loop.md`](./agentic-loop.md)** | The agent types, the auto-chaining state machine, YOLO mode, prompt templates + user overrides, per-agent model+effort, git worktrees, GitHub webhook callbacks. |
 | **[`task-management.md`](./task-management.md)** | The domain model (projects / tasks / conversations), the SQLite schema, `TaskContext` state + navigation, URL routing, the 4-screen UI flow. |
 | **[`authentication.md`](./authentication.md)** | App-level auth (JWT + per-user API keys, NOT Claude OAuth), `token_version` invalidation, rate limiting, the project-membership authorization model, admin panel, `is_technical`. |
 | **[`api-reference.md`](./api-reference.md)** | Flat lookup table of REST endpoints and WebSocket message types. Read the topical docs for the **why**; read this for the **shape**. |

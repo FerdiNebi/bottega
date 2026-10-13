@@ -8,6 +8,7 @@ import {
   generatePlanificationMessage,
   generatePrAgentCommentMessage,
   generatePrAgentReviewMessage,
+  generateLearningsMessage,
 } from './agentPrompts.js';
 import { saveOverride, deleteOverride, toPromptPath } from '../services/promptRenderer.js';
 
@@ -309,5 +310,23 @@ describe('PR procedure: rebase first, never wait on a conflicting PR', () => {
     const msg = await generatePrAgentCommentMessage('/t.md', 1, 'https://x/pull/1', { commentBody: 'x' }, 'trunk');
     expect(msg).toContain('git fetch origin trunk && git rebase origin/trunk');
     expect(msg).not.toContain('origin/main');
+  });
+});
+
+describe('generateLearningsMessage', () => {
+  it('passes the run digest through verbatim, including braces in tool output', async () => {
+    const digest = '### Failed commands\n- 1x, implementation: `pnpm test` — expected {{time}} in template';
+    // Line endings follow the checkout (CRLF on Windows); compare without them.
+    const msg = (await generateLearningsMessage('/t.md', 1, digest, 'main')).replace(/\r\n/g, '\n');
+    expect(msg).toContain(`<run_digest>\n${digest}\n</run_digest>`);
+    expect(msg).toContain('git diff main...HEAD');
+  });
+
+  it('limits the agent to the managed section of CLAUDE.md and a commit of that file', async () => {
+    const msg = await generateLearningsMessage('/t.md', 1, 'none', 'main');
+    expect(msg).toContain('<!-- bottega:learnings:start -->');
+    expect(msg).toContain('<!-- bottega:learnings:end -->');
+    expect(msg).toContain('Never change text outside the markers');
+    expect(msg).toContain('git add CLAUDE.md && git commit -m "Update project knowledge in CLAUDE.md"');
   });
 });

@@ -22,6 +22,7 @@ const AGENT_LABELS: Record<AgentType, string> = {
   planification: 'Planning',
   implementation: 'Implementation',
   refinement: 'Refinement',
+  learnings: 'Learnings',
   review: 'Review',
   pr: 'PR',
   yolo: 'YOLO',

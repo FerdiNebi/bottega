@@ -78,14 +78,15 @@ export function buildAgentRunCompletionHandler(
           });
         }
 
-        // Chain implementation/review/refinement, plus planification for
+        // Chain implementation/review/refinement/learnings, plus planification for
         // non-technical owners (handleAgentChaining decides per-owner).
         // PR agent is terminal — no chaining after it completes.
         if (
           agentType === 'planification' ||
           agentType === 'implementation' ||
           agentType === 'review' ||
-          agentType === 'refinement'
+          agentType === 'refinement' ||
+          agentType === 'learnings'
         ) {
           shouldChain = true;
         }
@@ -190,11 +191,12 @@ async function handleAgentChaining(
     return;
   }
 
-  // workflow_complete → run refinement → PR pipeline
+  // workflow_complete → run refinement → learnings → PR pipeline
   if (task?.workflow_complete) {
+    const refinementDone = agentType === 'refinement' || !!task?.refinement_complete;
     if (agentType === 'refinement') {
       tasksDb.markRefinementComplete(taskId);
-      // Fall through to PR check
+      // Fall through to the learnings check
     } else if (!task?.refinement_complete) {
       console.log(`[ConversationAdapter] Starting refinement agent for task ${taskId}`);
       const { startAgentRun } = await import('../agentRunner.js');
@@ -204,6 +206,23 @@ async function handleAgentChaining(
         } catch (err) {
           console.error(`[ConversationAdapter] Failed to start refinement agent:`, err);
           autopilot.onAutopilotLoopStopped(taskId, `could not start refinement: ${errorText(err)}`);
+        }
+      }, 1000);
+      return;
+    }
+
+    if (agentType === 'learnings') {
+      tasksDb.markLearningsComplete(taskId);
+      // Fall through to PR check
+    } else if (refinementDone && !task?.learnings_complete) {
+      console.log(`[ConversationAdapter] Starting learnings agent for task ${taskId}`);
+      const { startAgentRun } = await import('../agentRunner.js');
+      setTimeout(async () => {
+        try {
+          await startAgentRun(taskId, 'learnings', { broadcastFn, broadcastToTaskSubscribersFn, userId });
+        } catch (err) {
+          console.error(`[ConversationAdapter] Failed to start learnings agent:`, err);
+          autopilot.onAutopilotLoopStopped(taskId, `could not start learnings: ${errorText(err)}`);
         }
       }, 1000);
       return;

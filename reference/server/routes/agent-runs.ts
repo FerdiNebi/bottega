@@ -24,6 +24,7 @@ const VALID_AGENT_TYPES: AgentType[] = [
   'planification',
   'implementation',
   'refinement',
+  'learnings',
   'review',
   'pr',
   'yolo',

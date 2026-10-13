@@ -26,6 +26,7 @@ import {
   generateImplementationMessage,
   generateReviewMessage,
   generateRefinementMessage,
+  generateLearningsMessage,
   generatePlanificationMessage,
   generatePrAgentMessage,
   generatePrAgentCommentMessage,
@@ -33,6 +34,7 @@ import {
   generateYoloMessage,
 } from '../constants/agentPrompts.js';
 import { loadAgentModelSettings } from './agentModelSettings.js';
+import { buildTaskRunDigest } from './taskRunDigest.js';
 import { renderPrompt, toPromptPath } from './promptRenderer.js';
 import type { AgentRunRow, CreatedConversation } from '../database/db.js';
 import type {
@@ -104,6 +106,14 @@ export async function startAgentRun(
       break;
     case 'refinement':
       message = await generateRefinementMessage(taskDocPath, taskId);
+      break;
+    case 'learnings':
+      message = await generateLearningsMessage(
+        taskDocPath,
+        taskId,
+        buildTaskRunDigest(taskId),
+        await getBaseBranch(taskWithProject.repo_folder_path),
+      );
       break;
     case 'pr': {
       // IMPORTANT: Use main repo path (not worktree path) for getPullRequestStatus
@@ -255,7 +265,8 @@ export async function startAgentRun(
   // Without this, they may spawn a sub-agent that runs for hours with zero visibility
   // in the parent conversation's JSONL. YOLO is designed as one continuous conversation.
   // Autopilot runs also lose AskUserQuestion: there is no one to answer it.
-  const disallowedTools = agentType === 'implementation' || agentType === 'yolo' ? ['Agent'] : [];
+  const disallowedTools =
+    agentType === 'implementation' || agentType === 'yolo' || agentType === 'learnings' ? ['Agent'] : [];
   if (autopilot) {
     disallowedTools.push('AskUserQuestion');
   }

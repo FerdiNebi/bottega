@@ -314,6 +314,7 @@ describe('agentRunner', () => {
         planification: { provider: 'anthropic', model: 'sonnet', effort: 'low' },
         implementation: { provider: 'anthropic', model: 'opus', effort: 'high' },
         refinement: { provider: 'anthropic', model: 'opus', effort: 'high' },
+        learnings: { provider: 'anthropic', model: 'opus', effort: 'high' },
         review: { provider: 'anthropic', model: 'opus', effort: 'high' },
         pr: { provider: 'anthropic', model: 'opus', effort: 'high' },
         yolo: { provider: 'anthropic', model: 'opus', effort: 'high' }
@@ -336,6 +337,7 @@ describe('agentRunner', () => {
         planification: { provider: 'openai', model: 'gpt-5.5', effort: 'medium' },
         implementation: { provider: 'anthropic', model: 'opus', effort: 'high' },
         refinement: { provider: 'anthropic', model: 'opus', effort: 'high' },
+        learnings: { provider: 'anthropic', model: 'opus', effort: 'high' },
         review: { provider: 'anthropic', model: 'opus', effort: 'high' },
         pr: { provider: 'anthropic', model: 'opus', effort: 'high' },
         yolo: { provider: 'anthropic', model: 'opus', effort: 'high' }

@@ -99,6 +99,7 @@ function task(id: number, overrides: Partial<TaskRow> = {}): TaskRow {
     planification_complete: 0,
     pr_agent_complete: 0,
     refinement_complete: 0,
+    learnings_complete: 0,
     yolo_mode: 0,
     completed_at: null,
     created_at: '',
@@ -233,8 +234,10 @@ describe('nextStepForTask', () => {
     expect(nextStepForTask(task(1), true)).toBe('planification');
     expect(nextStepForTask(task(1, { planification_complete: 1 }), true)).toBe('implementation');
     expect(nextStepForTask(task(1, { workflow_complete: 1 }), true)).toBe('refinement');
-    expect(nextStepForTask(task(1, { workflow_complete: 1, refinement_complete: 1 }), true)).toBe('pr');
-    expect(nextStepForTask(task(1, { workflow_complete: 1, refinement_complete: 1 }), false)).toBe('finish');
+    expect(nextStepForTask(task(1, { workflow_complete: 1, refinement_complete: 1 }), true)).toBe('learnings');
+    expect(nextStepForTask(task(1, { workflow_complete: 1, refinement_complete: 1 }), false)).toBe('learnings');
+    expect(nextStepForTask(task(1, { workflow_complete: 1, refinement_complete: 1, learnings_complete: 1 }), true)).toBe('pr');
+    expect(nextStepForTask(task(1, { workflow_complete: 1, refinement_complete: 1, learnings_complete: 1 }), false)).toBe('finish');
     expect(nextStepForTask(task(1, { yolo_mode: 1 }), true)).toBe('yolo');
     expect(nextStepForTask(task(1, { pr_agent_complete: 1 }), true)).toBe('finish');
   });

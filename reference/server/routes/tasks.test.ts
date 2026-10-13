@@ -22,6 +22,8 @@ vi.mock('../database/db.js', () => ({
     markPrAgentComplete: vi.fn(),
     markRefinementComplete: vi.fn(),
     resetRefinementComplete: vi.fn(),
+    markLearningsComplete: vi.fn(),
+    resetLearningsComplete: vi.fn(),
     getOldCompletedTasks: vi.fn()
   },
   conversationsDb: {
@@ -617,7 +619,7 @@ describe('Tasks Routes - Phase 3', () => {
   });
 
   describe('PUT /api/tasks/:id/workflow-complete', () => {
-    it('should set workflow_complete to true and mark refinement + PR agent complete', async () => {
+    it('should set workflow_complete to true and mark refinement, learnings + PR agent complete', async () => {
       const mockTaskWithProject = { id: 1, project_id: 1, workflow_complete: 0 };
       const updatedTask = { id: 1, project_id: 1, workflow_complete: 1, refinement_complete: 1, pr_agent_complete: 1 };
       vi.mocked(tasksDb.getWithProject).mockReturnValue(mockTaskWithProject as never);
@@ -637,10 +639,11 @@ describe('Tasks Routes - Phase 3', () => {
       expect(response.body.refinement_complete).toBe(1);
       expect(tasksDb.update).toHaveBeenCalledWith(1, { workflow_complete: 1 });
       expect(tasksDb.markRefinementComplete).toHaveBeenCalledWith(1);
+      expect(tasksDb.markLearningsComplete).toHaveBeenCalledWith(1);
       expect(tasksDb.markPrAgentComplete).toHaveBeenCalledWith(1);
     });
 
-    it('should set workflow_complete to false and reset refinement_complete', async () => {
+    it('should set workflow_complete to false and reset refinement_complete and learnings_complete', async () => {
       const mockTaskWithProject = { id: 1, project_id: 1, workflow_complete: 1 };
       const updatedTask = { id: 1, project_id: 1, workflow_complete: 0, pr_agent_complete: 0, refinement_complete: 0 };
       vi.mocked(tasksDb.getWithProject).mockReturnValue(mockTaskWithProject as never);
@@ -659,6 +662,7 @@ describe('Tasks Routes - Phase 3', () => {
       expect(tasksDb.markPrAgentComplete).not.toHaveBeenCalled();
       // Should reset refinement_complete when setting to false
       expect(tasksDb.resetRefinementComplete).toHaveBeenCalledWith(1);
+      expect(tasksDb.resetLearningsComplete).toHaveBeenCalledWith(1);
     });
 
     it('should force-complete running agents when setting complete=true', async () => {

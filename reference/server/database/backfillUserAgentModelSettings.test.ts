@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { backfillUserAgentModelSettings } from './db.js';
+import { backfillUserAgentModelSettings, backfillLearningsAgentSetting } from './db.js';
 import {
   AGENT_TYPES_WITH_SETTINGS,
   DEFAULT_AGENT_MODEL_SETTINGS,
@@ -98,5 +98,52 @@ describe('backfillUserAgentModelSettings', () => {
       model: 'sonnet',
       effort: 'low',
     });
+  });
+});
+
+describe('backfillLearningsAgentSetting', () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  function saveSettings(userId: number, settings: unknown): void {
+    db.prepare('INSERT INTO user_agent_model_settings (user_id, settings_json) VALUES (?, ?)').run(
+      userId,
+      typeof settings === 'string' ? settings : JSON.stringify(settings),
+    );
+  }
+
+  it('copies the refinement setting into a row saved before the learnings agent existed', () => {
+    const userId = addUser(db, 'alice');
+    const { learnings: _omitted, ...older } = DEFAULT_AGENT_MODEL_SETTINGS;
+    saveSettings(userId, { ...older, refinement: { provider: 'openai', model: 'gpt-5.5', effort: 'medium' } });
+
+    backfillLearningsAgentSetting(db);
+
+    const settings = settingsFor(db, userId)!;
+    expect(settings.learnings).toEqual({ provider: 'openai', model: 'gpt-5.5', effort: 'medium' });
+    for (const agent of AGENT_TYPES_WITH_SETTINGS) expect(settings[agent]).toBeDefined();
+  });
+
+  it('leaves rows that already have learnings, or that cannot be read, untouched', () => {
+    const withLearnings = addUser(db, 'bob');
+    const custom = { ...DEFAULT_AGENT_MODEL_SETTINGS, learnings: { provider: 'anthropic', model: 'sonnet', effort: 'low' } };
+    saveSettings(withLearnings, custom);
+    const broken = addUser(db, 'carol');
+    saveSettings(broken, 'not json');
+
+    backfillLearningsAgentSetting(db);
+
+    expect(settingsFor(db, withLearnings)).toEqual(custom);
+    expect(
+      (db.prepare('SELECT settings_json FROM user_agent_model_settings WHERE user_id = ?').get(broken) as { settings_json: string })
+        .settings_json,
+    ).toBe('not json');
   });
 });

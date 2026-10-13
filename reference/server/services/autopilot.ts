@@ -116,6 +116,7 @@ export function nextStepForTask(task: TaskRow, hasRemote: boolean): AutopilotSte
   if (task.yolo_mode) return 'yolo';
   if (task.workflow_complete) {
     if (!task.refinement_complete) return 'refinement';
+    if (!task.learnings_complete) return 'learnings';
     return hasRemote ? 'pr' : 'finish';
   }
   if (task.planification_complete) return 'implementation';

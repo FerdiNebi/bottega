@@ -41,8 +41,9 @@ the loop needs to know about them.
 | **review** | Verifies the implementation against the plan, runs tests, and decides READY / NEEDS_WORK / BLOCKED. | READY → `complete-workflow.ts` (sets `workflow_complete`). BLOCKED → `block-workflow.ts` (sets `workflow_blocked`). NEEDS_WORK → no script, just ends. |
 | **PR** (`pr`) | Opens the pull request, drives CI to green, resolves conflicts. Terminal. | Running `complete-pr.ts` → sets `pr_agent_complete`. |
 
-The agent-type enum in the schema also contains `refinement` and `yolo`. Those
-are **extras** ([`refinement-agent.md`](../extra/refinement-agent.md),
+The agent-type enum in the schema also contains `refinement`, `learnings` and
+`yolo`. Those are **extras** ([`refinement-agent.md`](../extra/refinement-agent.md),
+[`learnings-agent.md`](../extra/learnings-agent.md),
 [`yolo-mode.md`](../extra/yolo-mode.md)). Core uses only the four above.
 
 ## The state machine
@@ -95,8 +96,8 @@ does this:
      [`auth-and-multi-user.md`](../extra/auth-and-multi-user.md). Core always
      stops here.)
    - **If `workflow_complete` is set** (review ran `complete-workflow.ts`): enter
-     the finish pipeline → start the **PR** agent. (The refinement extra inserts
-     itself here, *before* PR.)
+     the finish pipeline → start the **PR** agent. (The refinement and learnings
+     extras insert themselves here, in that order, *before* PR.)
    - **If `workflow_blocked` is set:** STOP. A human must resume.
    - **If `workflow_run_count` ≥ the cap:** auto-block the task and STOP
      (broadcast `task-blocked`, reason `max_iterations`).

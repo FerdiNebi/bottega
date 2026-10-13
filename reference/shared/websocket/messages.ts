@@ -28,6 +28,7 @@ export type AgentType =
   | 'implementation'
   | 'review'
   | 'refinement'
+  | 'learnings'
   | 'pr'
   | 'yolo';
 

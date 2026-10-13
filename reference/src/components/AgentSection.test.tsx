@@ -16,6 +16,7 @@ vi.mock('lucide-react', () => ({
   AlertCircle: () => <span data-testid="icon-alert-circle" />,
   GitPullRequest: () => <span data-testid="icon-git-pull-request" />,
   Sparkles: () => <span data-testid="icon-sparkles" />,
+  BookOpen: () => <span data-testid="icon-book-open" />,
   Zap: () => <span data-testid="icon-zap" />,
 }));
 
@@ -211,8 +212,8 @@ describe('AgentSection', () => {
         />
       );
 
-      // planification is completed; the other four steps have no runs → 4 Run buttons.
-      expect(screen.getAllByText('Run')).toHaveLength(4);
+      // planification is completed; the other five steps have no runs → 5 Run buttons.
+      expect(screen.getAllByText('Run')).toHaveLength(5);
     });
 
     it('should show Running status for running implementation agent', () => {
@@ -304,7 +305,7 @@ describe('AgentSection', () => {
       expect(completedButtons.length).toBe(2); // implementation + review
 
       const runButtons = screen.getAllByText('Run');
-      expect(runButtons.length).toBe(3); // planification + refinement + PR
+      expect(runButtons.length).toBe(4); // planification + refinement + learnings + PR
     });
 
     it('should show Completed status for refinement when its run status is completed', () => {
@@ -503,7 +504,7 @@ describe('AgentSection', () => {
       });
 
       // Run button should be visible again
-      expect(screen.getAllByText('Run')).toHaveLength(5);
+      expect(screen.getAllByText('Run')).toHaveLength(6);
     });
 
     it('should pass correct agent type to onRunAgent for all agent types', async () => {
@@ -512,7 +513,7 @@ describe('AgentSection', () => {
 
       const runButtons = screen.getAllByText('Run');
 
-      // Click all five buttons in sequence
+      // Click all six buttons in sequence
       fireEvent.click(runButtons[0]!); // Planification
       await waitFor(() => expect(onRunAgent).toHaveBeenCalledWith('planification'));
 
@@ -525,7 +526,10 @@ describe('AgentSection', () => {
       fireEvent.click(runButtons[3]!); // Refinement
       await waitFor(() => expect(onRunAgent).toHaveBeenCalledWith('refinement'));
 
-      fireEvent.click(runButtons[4]!); // PR
+      fireEvent.click(runButtons[4]!); // Learnings
+      await waitFor(() => expect(onRunAgent).toHaveBeenCalledWith('learnings'));
+
+      fireEvent.click(runButtons[5]!); // PR
       await waitFor(() => expect(onRunAgent).toHaveBeenCalledWith('pr'));
     });
   });
@@ -549,9 +553,9 @@ describe('AgentSection', () => {
       // Should show Running for implementation
       expect(screen.getByText('Running')).toBeInTheDocument();
 
-      // Should show Run for review, refinement, and PR (no agent run exists)
+      // Should show Run for review, refinement, learnings and PR (no agent run exists)
       const runButtons = screen.getAllByText('Run');
-      expect(runButtons).toHaveLength(3); // Review, Refinement, and PR should have Run buttons
+      expect(runButtons).toHaveLength(4); // Review, Refinement, Learnings and PR should have Run buttons
     });
 
     it('should use the most recent agent run (highest id) when multiple exist for the same type', () => {
@@ -615,9 +619,9 @@ describe('AgentSection', () => {
 
       // Failed status shows Failed button which can be clicked to retry
       expect(screen.getByText('Failed')).toBeInTheDocument();
-      // Planification, Review, Refinement, and PR should still show Run buttons
+      // Planification, Review, Refinement, Learnings and PR should still show Run buttons
       const runButtons = screen.getAllByText('Run');
-      expect(runButtons.length).toBe(4);
+      expect(runButtons.length).toBe(5);
     });
 
     it('should show conversation button for failed agent with conversation_id', () => {
