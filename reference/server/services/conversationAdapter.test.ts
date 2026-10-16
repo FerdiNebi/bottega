@@ -523,7 +523,7 @@ describe('conversationAdapter', () => {
       };
 
       const signal = new AbortController().signal;
-      const callbackPromise = canUseTool('AskUserQuestion', input, { signal, toolUseID: 'tool-abc' });
+      const callbackPromise = canUseTool('AskUserQuestion', input, { signal, toolUseID: 'tool-abc', requestId: 'req-abc' });
 
       // Should NOT resolve immediately — it's parked.
       let settled = false;
@@ -598,7 +598,8 @@ describe('conversationAdapter', () => {
       const ac = new AbortController();
       const promise = canUseTool('AskUserQuestion', { questions: [{ question: 'Q?', header: 'H' }] }, {
         signal: ac.signal,
-        toolUseID: 'tool-abort-1'
+        toolUseID: 'tool-abort-1',
+        requestId: 'req-abort-1'
       });
 
       ac.abort();
