@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MILESTONE_PREFIX } from '../../shared/milestones.js';
 
 /**
  * Task breakdown for the project-bootstrap extra ("Create initial tasks").
@@ -17,6 +18,8 @@ const TaskBreakdownItemSchema = z.object({
   key: z.string().trim().min(1, 'key must not be empty'),
   title: z.string().trim().min(1, 'title must not be empty'),
   dependsOn: z.array(z.string().trim().min(1, 'dependsOn entries must not be empty')).default([]),
+  /** A milestone task is a manual verification checkpoint, not work to build. */
+  kind: z.enum(['task', 'milestone']).default('task'),
   spec: z.string().trim().min(1, 'spec must not be empty'),
 });
 
@@ -33,6 +36,8 @@ export type ValidateTaskListResult =
 // The level prefix is computed, never trusted from the model — drop any the
 // agent put on a title so "2. Auth" doesn't become "2. 2. Auth".
 const LEVEL_PREFIX = /^\d+\.\s+/;
+// Same for the milestone marker, which the script adds from `kind`.
+const MILESTONE_MARKER = /^milestone:\s*/i;
 
 function describeTask(task: TaskBreakdownItem, index: number): string {
   return `task[${index}] "${task.key}"`;
@@ -56,7 +61,7 @@ export function validateTaskList(input: unknown): ValidateTaskListResult {
 
   const tasks = parsed.data.map((task) => ({
     ...task,
-    title: task.title.replace(LEVEL_PREFIX, '').trim() || task.title,
+    title: task.title.replace(LEVEL_PREFIX, '').replace(MILESTONE_MARKER, '').trim() || task.title,
   }));
   const errors: string[] = [];
 
@@ -166,8 +171,77 @@ export function topologicalOrder(tasks: TaskBreakdownItem[]): LeveledTask[] {
     .map(({ task }) => task);
 }
 
-export function formatLeveledTitle(level: number, title: string): string {
-  return `${level}. ${title}`;
+export function formatLeveledTitle(
+  level: number,
+  title: string,
+  kind: TaskBreakdownItem['kind'] = 'task',
+): string {
+  return `${level}. ${kind === 'milestone' ? MILESTONE_PREFIX : ''}${title}`;
+}
+
+/**
+ * The milestone rules (extra/project-bootstrap.md, "Milestone rules") for a
+ * list that passed validateTaskList. With milestones in topological order:
+ * there is at least one; each has dependencies; every task is covered by
+ * (is a transitive dependency of) some milestone; each milestone owns a task
+ * no earlier milestone covers; and a task owned by a later milestone depends
+ * on the previous milestone, so milestones form a chain autopilot stops along.
+ */
+export function validateMilestones(tasks: TaskBreakdownItem[]): string[] {
+  const byKey = new Map(tasks.map((task) => [task.key, task]));
+  const ancestors = new Map<string, Set<string>>();
+  const ancestorsOf = (key: string): Set<string> => {
+    const cached = ancestors.get(key);
+    if (cached) return cached;
+    const result = new Set<string>();
+    for (const dep of byKey.get(key)?.dependsOn ?? []) {
+      result.add(dep);
+      for (const transitive of ancestorsOf(dep)) result.add(transitive);
+    }
+    ancestors.set(key, result);
+    return result;
+  };
+
+  const milestones = topologicalOrder(tasks).filter((task) => task.kind === 'milestone');
+  if (milestones.length === 0) {
+    return [
+      'the list has no milestone: end each group of tasks a person can try out with a task of kind "milestone"',
+    ];
+  }
+
+  const errors: string[] = [];
+  const owner = new Map<string, number>(); // task key -> index of the first milestone covering it
+  milestones.forEach((milestone, index) => {
+    if (milestone.dependsOn.length === 0) {
+      errors.push(`milestone "${milestone.key}": must depend on the tasks it verifies`);
+      return;
+    }
+    let owned = 0;
+    for (const key of ancestorsOf(milestone.key)) {
+      if (byKey.get(key)?.kind === 'milestone' || owner.has(key)) continue;
+      owner.set(key, index);
+      owned += 1;
+    }
+    if (owned === 0) {
+      errors.push(`milestone "${milestone.key}": verifies no task that an earlier milestone does not already cover`);
+    }
+  });
+
+  for (const task of tasks) {
+    if (task.kind === 'milestone') continue;
+    const index = owner.get(task.key);
+    if (index === undefined) {
+      errors.push(`task "${task.key}": no milestone depends on it, so it would never be verified`);
+    } else if (index > 0) {
+      const previous = milestones[index - 1]!;
+      if (!ancestorsOf(task.key).has(previous.key)) {
+        errors.push(
+          `task "${task.key}": belongs to milestone "${milestones[index]!.key}" and must depend (directly or through another task) on the previous milestone "${previous.key}"`,
+        );
+      }
+    }
+  }
+  return errors;
 }
 
 export interface DependencyRef {
@@ -258,6 +332,8 @@ export async function createTasksFromBreakdown(
 
   const validation = validateTaskList(input);
   if (!validation.ok) return validation;
+  const milestoneErrors = validateMilestones(validation.tasks);
+  if (milestoneErrors.length > 0) return { ok: false, errors: milestoneErrors };
 
   const ordered = topologicalOrder(validation.tasks);
   const isGit = await deps.isGitRepository(session.repo_folder_path);
@@ -267,7 +343,7 @@ export async function createTasksFromBreakdown(
 
   try {
     for (const task of ordered) {
-      const title = formatLeveledTitle(task.level, task.title);
+      const title = formatLeveledTitle(task.level, task.title, task.kind);
       const row = deps.createTask(session.project_id, title, session.user_id);
       const entry = { key: task.key, id: row.id, level: task.level, title, dependsOn: [] as DependencyRef[], hasWorktree: false };
       created.push(entry);

@@ -34,7 +34,10 @@ import { createOrUpdatePR } from '../services/prService.js';
 import { switchWorktree } from '../services/webServerManager.js';
 import type { TaskUpdates } from '../database/db.js';
 import type { ApiError } from '../../shared/api/_common.js';
-import type { MergeLocallyResponse } from '../../shared/api/tasks.js';
+import type { MergeLocallyResponse, StartMilestoneSessionResponse } from '../../shared/api/tasks.js';
+import type { BroadcastFn } from '../../shared/websocket/messages.js';
+import { MilestoneSessionError, startMilestoneSession } from '../services/milestoneVerification.js';
+import { ProviderCredentialsMissingError } from '../services/credentials/types.js';
 import { validateBody, validateParams, validateQuery } from '../middleware/validate.js';
 import {
   IdParamsSchema,
@@ -1097,6 +1100,51 @@ router.delete(
     } catch (error) {
       console.error('Error discarding worktree:', error);
       res.status(500).json({ error: 'Failed to discard worktree' } satisfies ApiError);
+    }
+  },
+);
+
+
+// Start a milestone task's verification session: a manual chat that makes the
+// app run and walks the human through setting it up and verifying the
+// milestone (extra/project-bootstrap.md, "The verification session").
+router.post(
+  '/tasks/:id/milestone-session',
+  validateParams(IdParamsSchema),
+  async (req: Request, res: Response<StartMilestoneSessionResponse | ApiError>) => {
+    try {
+      const userId = req.user!.id;
+      const { id: taskId } = req.validated!.params as IdParams;
+
+      const taskWithProject = tasksDb.getWithProject(taskId);
+      if (!taskWithProject || !hasProjectAccess(taskWithProject.project_id, userId)) {
+        return res.status(404).json({ error: 'Task not found' } satisfies ApiError);
+      }
+
+      const broadcastToConversationSubscribers =
+        req.app.locals.broadcastToConversationSubscribers as BroadcastFn | undefined;
+      const result = await startMilestoneSession({
+        taskId,
+        userId,
+        broadcastFn: (convId, msg) => broadcastToConversationSubscribers?.(convId, msg),
+      });
+      res.status(201).json(result);
+    } catch (error) {
+      if (error instanceof MilestoneSessionError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      if (error instanceof ProviderCredentialsMissingError) {
+        const providerLabel =
+          error.provider === 'openai' ? 'OpenAI' : error.provider === 'opencode' ? 'OpenCode' : 'Claude';
+        return res.status(403).json({
+          error: `${providerLabel} credentials are not provisioned for this user. Connect ${providerLabel} in Settings → Providers.`,
+          code: 'PROVIDER_CREDENTIALS_MISSING',
+          provider: error.provider,
+        } as never);
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('Error starting milestone session:', error);
+      res.status(500).json({ error: `Failed to start verification: ${message}` } satisfies ApiError);
     }
   },
 );

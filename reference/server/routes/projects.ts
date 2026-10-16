@@ -361,6 +361,9 @@ router.post(
       if (result.status === 'finished') {
         return res.json({ taskId: result.taskId, step: 'finish' });
       }
+      if (result.status === 'milestone') {
+        return res.json({ taskId: result.taskId, step: 'milestone' });
+      }
       res.status(409).json({ error: result.message });
     } catch (error) {
       if (error instanceof ProviderCredentialsMissingError) {

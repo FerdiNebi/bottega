@@ -135,9 +135,54 @@ describe('project bootstrap prompts', () => {
     expect(loadDefault('task-breakdown')).toMatch(/never commit, push, or open a pull request/i);
   });
 
+  it('the task breakdown splits vertically into milestones that end in milestone tasks', () => {
+    const content = loadDefault('task-breakdown');
+    expect(content).toMatch(/Split vertically, never horizontally/);
+    expect(content).toMatch(/thinnest end-to-end path a person can try/);
+    expect(content).toContain('"kind": "milestone"');
+    expect(content).toContain('## Verification scenarios');
+    expect(content).toMatch(/depends on the previous milestone/);
+  });
+
   it('the task breakdown runs create-tasks.ts with the session task id', () => {
     const rendered = renderPrompt('task-breakdown', VARS);
     expect(rendered).toMatch(/tsx \S+\/create-tasks\.ts 1234 bootstrap-tasks\.json/);
     expect(rendered).not.toContain('{{scriptsDir}}');
+  });
+});
+
+describe('milestone verification prompt', () => {
+  const VARS = { taskId: 77, taskDocPath: '/docs/task-77.md' };
+
+  it('is registered and renders exactly its declared variables', () => {
+    const def = getPromptDefinition('milestone-verification');
+    expect(def).not.toBeNull();
+    expect([...def!.variables].sort()).toEqual(['taskDocPath', 'taskId']);
+    expect(extractVariables(loadDefault('milestone-verification')).sort()).toEqual(['taskDocPath', 'taskId']);
+    const rendered = renderPrompt('milestone-verification', VARS);
+    expect(rendered).not.toMatch(/\{\{\w+\}\}/);
+    expect(rendered).toContain('/docs/task-77.md');
+  });
+
+  it('makes the app run before handing over, then writes the guide into the task doc', () => {
+    const content = loadDefault('milestone-verification');
+    expect(content.indexOf('Make it run')).toBeLessThan(content.indexOf('Write the verification guide'));
+    expect(content).toMatch(/full\*\* test suite/);
+    expect(content).toContain('## Verification guide');
+    for (const section of ['Prerequisites', 'External accounts', 'Configuration', 'Setup', 'Run', 'Verify']) {
+      expect(content).toContain(`**${section}**`);
+    }
+  });
+
+  it('closes only on the human\'s confirmation, via Merge without PR', () => {
+    const content = loadDefault('milestone-verification');
+    expect(content).toMatch(/Only when the human confirms/);
+    expect(content).toContain('Merge without PR');
+  });
+
+  it('never pushes, opens a PR, or reads secrets', () => {
+    const content = loadDefault('milestone-verification');
+    expect(content).toMatch(/Never push or open a pull request/);
+    expect(content).toMatch(/never open or print `\.env`/);
   });
 });

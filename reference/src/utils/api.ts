@@ -78,6 +78,7 @@ import type {
   PushChangesRequest,
   PushChangesResponse,
   DiscardWorktreeResponse,
+  StartMilestoneSessionResponse,
 } from '../../shared/api/tasks';
 import type { TaskStatus } from '../../shared/types/db';
 import type {
@@ -492,6 +493,8 @@ export const api = {
         `/api/tasks/${id}/worktree${force ? '?force=true' : ''}`,
         { method: 'DELETE' }
       ),
+    startMilestoneSession: (id: number): TypedFetch<StartMilestoneSessionResponse> =>
+      authenticatedFetch<StartMilestoneSessionResponse>(`/api/tasks/${id}/milestone-session`, { method: 'POST' }),
     mergeLocally: (id: number): TypedFetch<MergeLocallyResponse> =>
       authenticatedFetch<MergeLocallyResponse>(`/api/tasks/${id}/merge-local`, { method: 'POST' }),
     pushChanges: (id: number, commitMessage?: string): TypedFetch<PushChangesResponse> => {

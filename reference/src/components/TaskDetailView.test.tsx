@@ -128,6 +128,7 @@ vi.mock('../utils/api', () => {
         discardWorktree: vi.fn(notOk),
         mergeLocally: vi.fn(notOk),
         pushChanges: vi.fn(notOk),
+        startMilestoneSession: vi.fn(notOk),
       },
       projects: {
         getWebServer: vi.fn(notOk),
@@ -167,6 +168,7 @@ vi.mock('lucide-react', () => ({
   Sparkles: () => <span data-testid="icon-sparkles" />,
   BookOpen: () => <span data-testid="icon-book-open" />,
   Zap: () => <span data-testid="icon-zap" />,
+  Flag: () => <span data-testid="icon-flag" />,
 }));
 
 describe('TaskDetailView Component', () => {
@@ -653,5 +655,59 @@ describe('TaskDetailView Component', () => {
         expect(api.projects.switchWebServer).toHaveBeenCalledWith('p1', null);
       });
     });
+  });
+});
+
+describe('TaskDetailView milestone tasks', () => {
+  const props = {
+    project: { id: 1, name: 'Dental' },
+    task: { id: 7, title: '4. Milestone: Sign in and view settings', status: 'in_progress' },
+    onBack: vi.fn(),
+    onProjectClick: vi.fn(),
+    onHomeClick: vi.fn(),
+    onNewConversation: vi.fn(),
+    onResumeConversation: vi.fn(),
+    onDeleteConversation: vi.fn(),
+    onRunAgent: vi.fn(),
+    onCIFixConversationCreated: vi.fn(),
+  } as unknown as TaskDetailViewProps;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('offers Start verification instead of the agent pipeline and opens the chat', async () => {
+    vi.mocked(api.tasks.startMilestoneSession).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ taskId: 7, conversationId: 42, initialMessage: 'guide please' }),
+    } as never);
+
+    render(<TaskDetailView {...props} />);
+    expect(screen.queryByText('Agents')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Start verification'));
+
+    await waitFor(() =>
+      expect(props.onCIFixConversationCreated).toHaveBeenCalledWith({ id: 42, __initialMessage: 'guide please' }),
+    );
+    expect(api.tasks.startMilestoneSession).toHaveBeenCalledWith(7);
+  });
+
+  it('shows why the session could not start', async () => {
+    vi.mocked(api.tasks.startMilestoneSession).mockResolvedValue({
+      ok: false,
+      json: () => Promise.resolve({ error: 'Only milestone tasks have a verification session' }),
+    } as never);
+
+    render(<TaskDetailView {...props} />);
+    fireEvent.click(screen.getByText('Start verification'));
+
+    expect(await screen.findByText('Only milestone tasks have a verification session')).toBeInTheDocument();
+  });
+
+  it('hides the button once the milestone is completed', () => {
+    const task = { id: 7, title: '4. Milestone: Sign in', status: 'completed' };
+    render(<TaskDetailView {...props} task={task as unknown as TaskDetailViewProps['task']} />);
+    expect(screen.queryByText('Start verification')).not.toBeInTheDocument();
+    expect(screen.getByText('This milestone was verified.')).toBeInTheDocument();
   });
 });

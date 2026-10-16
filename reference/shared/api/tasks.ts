@@ -254,6 +254,15 @@ export type MergeAndCleanupResponse =
     }
   | { success: false; error: string };
 
+// `POST /api/tasks/:id/milestone-session` — starts a milestone task's manual
+// verification chat (extra/project-bootstrap.md).
+export interface StartMilestoneSessionResponse {
+  taskId: number;
+  conversationId: number;
+  /** The rendered prompt sent as the first user message (shown while streaming). */
+  initialMessage: string;
+}
+
 // ---- Type-level smoke checks ---------------------------------------------
 
 expectType<TaskRow['status']>('pending');

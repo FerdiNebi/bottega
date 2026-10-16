@@ -24,6 +24,8 @@ import {
 } from './worktree.js';
 import { switchWorktree } from './webServerManager.js';
 import { ProviderCredentialsMissingError } from './credentials/types.js';
+import { startMilestoneSession } from './milestoneVerification.js';
+import { isMilestoneTitle } from '../../shared/milestones.js';
 import type { ProjectRow, TaskRow } from '../database/db.js';
 import type { AutopilotStatusResponse } from '@shared/api/projects';
 import type {
@@ -100,6 +102,9 @@ export function planAutopilot(infos: AutopilotTaskInfo[]): AutopilotPlan {
   plan.ready.sort((a, b) => {
     const started = Number(b.status !== 'pending') - Number(a.status !== 'pending');
     if (started !== 0) return started;
+    // Stop at a milestone as soon as it is reachable.
+    const milestone = Number(isMilestoneTitle(b.title)) - Number(isMilestoneTitle(a.title));
+    if (milestone !== 0) return milestone;
     const levelA = parseLevel(a.title) ?? Number.POSITIVE_INFINITY;
     const levelB = parseLevel(b.title) ?? Number.POSITIVE_INFINITY;
     if (levelA !== levelB) return levelA - levelB;
@@ -199,6 +204,7 @@ async function withProjectLock<T>(projectId: number, fn: () => Promise<T>): Prom
 export type StartNextResult =
   | { status: 'started'; taskId: number; step: AutopilotStep }
   | { status: 'finished'; taskId: number }
+  | { status: 'milestone'; taskId: number; message: string }
   | { status: 'disabled' | 'busy' | 'running' | 'idle' | 'failed'; message: string };
 
 /** Pick the next ready task and start (or finish) it. */
@@ -229,7 +235,13 @@ async function startNextLocked(projectId: number, ctx: AutopilotContext): Promis
   const task = plan.ready[0];
   if (!task) {
     let message: string;
-    if (plan.waiting.length === 0 && plan.blocked.length === 0) {
+    // A milestone whose verification session started: in progress, no agent runs.
+    const verifying = tasksDb
+      .getByProject(projectId)
+      .filter((t) => isMilestoneTitle(t.title) && STARTED_STATUSES.has(t.status));
+    if (verifying.length > 0) {
+      message = `Stopped: waiting for manual verification of ${verifying.map(label).join(', ')}. When it works, finish it with Merge without PR, then press Start.`;
+    } else if (plan.waiting.length === 0 && plan.blocked.length === 0) {
       message = 'Done: no tasks left to run.';
     } else if (plan.blocked.length > 0) {
       message = `Stopped: ${plan.blocked.map(label).join(', ')} blocked; ${plan.waiting.length} task(s) waiting on dependencies.`;
@@ -242,6 +254,19 @@ async function startNextLocked(projectId: number, ctx: AutopilotContext): Promis
 
   const repoPath = project.repo_folder_path;
   try {
+    if (isMilestoneTitle(task.title)) {
+      // A manual checkpoint: hand the milestone to the human and stop. The
+      // session refreshes the worktree itself.
+      await startMilestoneSession({
+        taskId: task.id,
+        userId: ctx.userId ?? task.user_id ?? project.user_id,
+        broadcastFn: ctx.broadcastFn,
+      });
+      const message = `Milestone reached: ${label(task)}. Open its chat for the setup, run and verification steps. When it works, finish it with Merge without PR, then press Start.`;
+      setMessage(projectId, message);
+      return { status: 'milestone', taskId: task.id, message };
+    }
+
     if (task.status === 'pending') {
       const prepared = await prepareWorktree(repoPath, task, project.subproject_path);
       if (prepared) {
