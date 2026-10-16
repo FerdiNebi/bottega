@@ -21,7 +21,11 @@ import {
 } from './sdkOptions.js';
 import { injectVideoRecording, waitForMcpServers } from './mcpReadiness.js';
 import { activeSessions } from './sessionState.js';
-import { buildCanUseTool, rejectPendingAskUserQuestion } from './askUserQuestion.js';
+import {
+  allowAllTools,
+  buildAskUserQuestionHook,
+  rejectPendingAskUserQuestion,
+} from './askUserQuestion.js';
 import {
   handleStreamingStarted,
   handleStreamingComplete,
@@ -127,7 +131,8 @@ export async function startConversation(
     effort,
     disallowedTools: normalizedOptions.disallowedTools,
     env: claudeEnv,
-    canUseTool: buildCanUseTool({ conversationId, broadcastFn }),
+    canUseTool: allowAllTools,
+    askUserQuestionHook: buildAskUserQuestionHook({ conversationId, broadcastFn }),
   });
 
   let mcpServers = await loadMcpConfig(projectPath);
@@ -469,7 +474,8 @@ export async function sendMessage(
     sessionId: claudeSessionId,
     permissionMode,
     env: claudeEnv,
-    canUseTool: buildCanUseTool({ conversationId, broadcastFn }),
+    canUseTool: allowAllTools,
+    askUserQuestionHook: buildAskUserQuestionHook({ conversationId, broadcastFn }),
     model: resumeModel,
     effort: resumeEffort,
   });

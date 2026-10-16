@@ -10,12 +10,16 @@ export const DEFAULT_PERMISSION_MODE: PermissionMode = 'bypassPermissions';
 
 // The Claude Agent SDK enforces a hard `min(1).max(4)` on AskUserQuestion.questions
 // (see node_modules/@anthropic-ai/claude-agent-sdk/cli.js). Calls with >4 questions
-// fail validation before our `canUseTool` runs, leaving a broken widget. The model
+// fail validation before our AskUserQuestion hook runs, leaving a broken widget. The model
 // already gets similar guidance from the preset, but reinforcing it noticeably
 // reduces overshoot.
 const ASK_USER_QUESTION_LIMIT_NOTE =
   '\n\nWhen using the AskUserQuestion tool, ask at most 4 questions per call. ' +
   'If you have more questions, split them across multiple sequential AskUserQuestion calls.';
+
+// Long enough for an answer given hours later from the phone; the SDK's
+// default hook timeout (60s) would cancel the question.
+export const ASK_USER_QUESTION_HOOK_TIMEOUT_SECONDS = 7 * 24 * 60 * 60;
 
 export interface ValidateOptionsInput {
   broadcastFn?: unknown;
@@ -56,6 +60,8 @@ export interface MapOptionsInput {
   permissionMode?: PermissionMode | undefined;
   customSystemPrompt?: string | undefined;
   canUseTool?: unknown;
+  /** PreToolUse hook that waits for the user's answer to AskUserQuestion. */
+  askUserQuestionHook?: unknown;
   env?: Record<string, string | undefined> | undefined;
   /** Required — Claude turns always run on an explicit model (never the SDK default). */
   model: string;
@@ -80,7 +86,7 @@ export interface SDKOptions {
   sessionStore?: typeof sqliteSessionStore;
   sessionStoreFlush?: 'eager' | 'lazy';
   mcpServers?: Record<string, unknown>;
-  hooks?: Record<string, { matcher?: string; hooks: unknown[] }[]>;
+  hooks?: Record<string, { matcher?: string; timeout?: number; hooks: unknown[] }[]>;
 }
 
 /**
@@ -147,6 +153,13 @@ export function mapOptionsToSDK(options: MapOptionsInput): SDKOptions {
   sdkOptions.hooks = {
     PreToolUse: [{ matcher: PROTECT_BOTTEGA_MATCHER, hooks: [protectBottegaHook] }],
   };
+  if (options.askUserQuestionHook) {
+    sdkOptions.hooks.PreToolUse!.push({
+      matcher: 'AskUserQuestion',
+      timeout: ASK_USER_QUESTION_HOOK_TIMEOUT_SECONDS,
+      hooks: [options.askUserQuestionHook],
+    });
+  }
 
   if (sessionId) {
     sdkOptions.resume = sessionId;

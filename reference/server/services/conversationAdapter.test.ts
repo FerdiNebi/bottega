@@ -485,9 +485,9 @@ describe('conversationAdapter', () => {
       expect(result).toEqual({ behavior: 'allow', updatedInput: { command: 'ls' } });
     });
 
-    it('canUseTool parks on a Promise for AskUserQuestion and broadcasts awaiting-user-answer', async () => {
-      // Canonical SDK pattern: the callback stays pending until the user
-      // submits via resolveAskUserQuestion; then it returns the real answers
+    it('the AskUserQuestion hook parks on a Promise and broadcasts awaiting-user-answer', async () => {
+      // The hook stays pending until the user submits via
+      // resolveAskUserQuestion; then it allows the call with the real answers
       // keyed by question text.
       let releaseHold: (value?: unknown) => void = () => {};
       const hold = new Promise(resolve => { releaseHold = resolve; });
@@ -513,7 +513,7 @@ describe('conversationAdapter', () => {
       await startConversation(1, 'Hello', { model: 'opus', broadcastFn });
       await new Promise(resolve => setTimeout(resolve, 30));
 
-      const canUseTool = vi.mocked(query).mock.calls[0]![0].options!.canUseTool!;
+      const askHook = vi.mocked(query).mock.calls[0]![0].options!.hooks!.PreToolUse![1]!.hooks[0]!;
 
       const input = {
         questions: [
@@ -523,7 +523,11 @@ describe('conversationAdapter', () => {
       };
 
       const signal = new AbortController().signal;
-      const callbackPromise = canUseTool('AskUserQuestion', input, { signal, toolUseID: 'tool-abc', requestId: 'req-abc' });
+      const callbackPromise = askHook(
+        { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: input, tool_use_id: 'tool-abc' } as never,
+        'tool-abc',
+        { signal }
+      );
 
       // Should NOT resolve immediately — it's parked.
       let settled = false;
@@ -552,10 +556,13 @@ describe('conversationAdapter', () => {
       await result;
 
       expect(cuseResult).toEqual({
-        behavior: 'allow',
-        updatedInput: {
-          questions: input.questions,
-          answers: { 'Which database?': 'pg', 'Which auth?': 'jwt' }
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'allow',
+          updatedInput: {
+            questions: input.questions,
+            answers: { 'Which database?': 'pg', 'Which auth?': 'jwt' }
+          }
         }
       });
 
@@ -569,7 +576,7 @@ describe('conversationAdapter', () => {
       await new Promise(resolve => setTimeout(resolve, 30));
     });
 
-    it('canUseTool rejects the parked promise when the abort signal fires', async () => {
+    it('the AskUserQuestion hook denies the call when the abort signal fires', async () => {
       let releaseHold: (value?: unknown) => void = () => {};
       const hold = new Promise(resolve => { releaseHold = resolve; });
       let nextCall = 0;
@@ -594,16 +601,22 @@ describe('conversationAdapter', () => {
       await startConversation(1, 'Hello', { model: 'opus', broadcastFn });
       await new Promise(resolve => setTimeout(resolve, 30));
 
-      const canUseTool = vi.mocked(query).mock.calls[0]![0].options!.canUseTool!;
+      const askHook = vi.mocked(query).mock.calls[0]![0].options!.hooks!.PreToolUse![1]!.hooks[0]!;
       const ac = new AbortController();
-      const promise = canUseTool('AskUserQuestion', { questions: [{ question: 'Q?', header: 'H' }] }, {
-        signal: ac.signal,
-        toolUseID: 'tool-abort-1',
-        requestId: 'req-abort-1'
-      });
+      const promise = askHook(
+        { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: 'Q?', header: 'H' }] }, tool_use_id: 'tool-abort-1' } as never,
+        'tool-abort-1',
+        { signal: ac.signal }
+      );
 
       ac.abort();
-      await expect(promise).rejects.toThrow(/aborted/i);
+      await expect(promise).resolves.toEqual({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason: expect.stringMatching(/aborted/i)
+        }
+      });
 
       releaseHold();
       await new Promise(resolve => setTimeout(resolve, 30));
@@ -887,7 +900,28 @@ it('should broadcast streaming-ended event when streaming completes', async () =
       await startConversation(1, 'Hello', { model: 'opus' });
 
       const hooks = vi.mocked(query).mock.calls[0]![0].options!.hooks!;
-      expect(hooks.PreToolUse).toEqual([{ matcher: 'Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit|Read', hooks: [protectBottegaHook] }]);
+      expect(hooks.PreToolUse![0]).toEqual({ matcher: 'Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit|Read', hooks: [protectBottegaHook] });
+    });
+
+    it('gates AskUserQuestion with a long-timeout PreToolUse hook and passes a canUseTool so the tool is offered', async () => {
+      vi.mocked(query).mockReturnValue({
+        [Symbol.asyncIterator]: () => ({
+          next: vi.fn()
+            .mockResolvedValueOnce({ value: { session_id: 'session-123', type: 'message' }, done: false })
+            .mockResolvedValueOnce({ value: { type: 'result', modelUsage: {} }, done: false })
+            .mockResolvedValueOnce({ done: true })
+        })
+      } as never);
+
+      await startConversation(1, 'Hello', { model: 'opus' });
+
+      const options = vi.mocked(query).mock.calls[0]![0].options!;
+      expect(options.canUseTool).toEqual(expect.any(Function));
+      expect(options.hooks!.PreToolUse![1]).toEqual({
+        matcher: 'AskUserQuestion',
+        timeout: 7 * 24 * 60 * 60,
+        hooks: [expect.any(Function)]
+      });
     });
 
     it('should not include disallowedTools in SDK options when empty', async () => {

@@ -12,7 +12,12 @@ vi.mock('./startConversation.js', () => ({ sendMessage: vi.fn() }));
 
 import { agentRunsDb, conversationsDb, tasksDb } from '../../database/db.js';
 import { isAutopilotProject } from '../autopilotFlag.js';
-import { AUTOPILOT_DENY_MESSAGE, buildCanUseTool, rejectPendingAskUserQuestion } from './askUserQuestion.js';
+import {
+  AUTOPILOT_DENY_MESSAGE,
+  buildAskUserQuestionHook,
+  buildCanUseTool,
+  rejectPendingAskUserQuestion,
+} from './askUserQuestion.js';
 
 const input = { questions: [{ question: 'JWT or sessions?', header: 'Auth' }] };
 
@@ -44,5 +49,47 @@ describe('buildCanUseTool under autopilot (extra/autopilot.md)', () => {
     expect(broadcastFn).toHaveBeenCalledWith(50, expect.objectContaining({ type: 'awaiting-user-answer' }));
     rejectPendingAskUserQuestion(50, 'test over');
     await expect(pending).rejects.toThrow(/test over/);
+  });
+});
+
+describe('buildAskUserQuestionHook', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(conversationsDb.getById).mockReturnValue({ id: 50, task_id: 7 } as never);
+    vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, project_id: 3 } as never);
+    vi.mocked(isAutopilotProject).mockReturnValue(true);
+  });
+
+  it('turns the autopilot deny into a PreToolUse deny decision', async () => {
+    vi.mocked(agentRunsDb.getByConversationId).mockReturnValue({ id: 1 } as never);
+    const hook = buildAskUserQuestionHook({ conversationId: 50, broadcastFn: vi.fn() });
+
+    const result = await hook({ tool_input: input, tool_use_id: 't1' }, 't1');
+
+    expect(result).toEqual({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: AUTOPILOT_DENY_MESSAGE,
+      },
+    });
+  });
+
+  it('denies instead of throwing when the parked question is rejected', async () => {
+    vi.mocked(agentRunsDb.getByConversationId).mockReturnValue(undefined);
+    const broadcastFn = vi.fn();
+    const hook = buildAskUserQuestionHook({ conversationId: 50, broadcastFn });
+
+    const pending = hook({ tool_input: input, tool_use_id: 't2' }, 't2');
+    expect(broadcastFn).toHaveBeenCalledWith(50, expect.objectContaining({ type: 'awaiting-user-answer', toolUseId: 't2' }));
+    rejectPendingAskUserQuestion(50, 'test over');
+
+    await expect(pending).resolves.toEqual({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: expect.stringMatching(/test over/),
+      },
+    });
   });
 });

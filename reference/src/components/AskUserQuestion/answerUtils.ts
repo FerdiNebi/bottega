@@ -69,7 +69,8 @@ export function getAnswerDisplay(answer: Answer, fallback = ''): string {
   return String(answer);
 }
 
-const ANSWERED_PREFIX = 'User has answered your questions:';
+// SDK 0.3.142 wrote the first wording; 0.3.301 writes the second.
+const ANSWERED_PREFIXES = ['User has answered your questions:', 'Your questions have been answered:'];
 
 /** Normalize a tool_result `content` field (may be string or [{text}] array) into a string. */
 function normalizeResultContent(content: ToolResultContent): string {
@@ -100,10 +101,10 @@ export function parseAnsweredToolResult(
   content: ToolResultContent,
 ): StructuredAnswers | null {
   const text = normalizeResultContent(content);
-  const prefixIdx = text.indexOf(ANSWERED_PREFIX);
-  if (prefixIdx < 0) return null;
+  const prefix = ANSWERED_PREFIXES.find((p) => text.includes(p));
+  if (!prefix) return null;
 
-  let body = text.slice(prefixIdx + ANSWERED_PREFIX.length).trim();
+  let body = text.slice(text.indexOf(prefix) + prefix.length).trim();
   const tailIdx = body.lastIndexOf('. You can now continue');
   if (tailIdx >= 0) body = body.slice(0, tailIdx);
 

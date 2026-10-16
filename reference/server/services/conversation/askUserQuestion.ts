@@ -52,9 +52,61 @@ function isAutopilotAgentRun(conversationId: ConversationId): boolean {
   return projectId != null && isAutopilotProject(projectId);
 }
 
+/** Passed to the SDK as `canUseTool`: it only offers AskUserQuestion when a callback is set. */
+export async function allowAllTools(
+  _toolName: string,
+  input: CanUseToolInput,
+): Promise<CanUseToolResult> {
+  return { behavior: 'allow', updatedInput: input };
+}
+
+interface PreToolUseHookInput {
+  tool_input?: unknown;
+  tool_use_id?: string;
+}
+
 /**
- * Build a `canUseTool` callback for the SDK. Non-AskUserQuestion tools pass
- * through unchanged so `bypassPermissions` semantics are preserved.
+ * PreToolUse hook that parks AskUserQuestion until the user answers. The SDK
+ * skips `canUseTool` entirely under `bypassPermissions` (Bottega's default),
+ * which let the tool run unanswered; hooks run in every permission mode.
+ */
+export function buildAskUserQuestionHook(options: BuildCanUseToolOptions = {}) {
+  const decide = buildCanUseTool(options);
+  return async function askUserQuestionHook(
+    input: PreToolUseHookInput,
+    toolUseID: string | undefined,
+    { signal }: { signal?: AbortSignal } = {},
+  ) {
+    const toolInput = (input?.tool_input ?? {}) as CanUseToolInput;
+    let result: CanUseToolResult;
+    try {
+      const id = toolUseID ?? input?.tool_use_id;
+      result = await decide('AskUserQuestion', toolInput, {
+        ...(id ? { toolUseID: id } : {}),
+        ...(signal ? { signal } : {}),
+      });
+    } catch (error) {
+      // A thrown hook lets the tool run on unanswered — deny instead.
+      result = {
+        behavior: 'deny',
+        message: error instanceof Error ? error.message : 'AskUserQuestion was not answered',
+      };
+    }
+    return {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse' as const,
+        permissionDecision: result.behavior,
+        ...(result.behavior === 'allow'
+          ? { updatedInput: result.updatedInput as Record<string, unknown> }
+          : { permissionDecisionReason: result.message }),
+      },
+    };
+  };
+}
+
+/**
+ * Decide an AskUserQuestion call; run by `buildAskUserQuestionHook`.
+ * Non-AskUserQuestion tools pass through unchanged.
  *
  * For AskUserQuestion we use the SDK's canonical pattern: the callback parks
  * on a Promise that's resolved later from a WebSocket handler when the user

@@ -14,6 +14,12 @@ describe('parseAnsweredToolResult', () => {
     });
   });
 
+  it('parses the SDK 0.3.301 wording', () => {
+    const content =
+      'Your questions have been answered: "Pick a color?"="Blue". You can now continue with these answers in mind.';
+    expect(parseAnsweredToolResult(content)).toEqual({ 'Pick a color?': 'Blue' });
+  });
+
   it('handles a single answer', () => {
     const content =
       'User has answered your questions: "Approach?"="Recommended". You can now continue with the user\'s answers in mind.';
