@@ -75,8 +75,8 @@ The implementation agent already ran targeted tests and the CI fast checks; the 
 
 **First review:**
 1. Run targeted tests only for code you suspect is under-tested, or for checks missing from the Verification Log (check CLAUDE.md for the test command)
-2. Run the **full test suite once**, using `run_in_background: true` on the Bash tool (full suites can take 5-15+ minutes)
-3. Wait for the background task to complete using TaskOutput with `block: true`
+2. Run the **full test suite once**, in the foreground with the Bash tool's `timeout: 600000` (full suites can take 5-10 minutes)
+3. Do NOT use `run_in_background`: nothing wakes you when a background command finishes, and ending your turn ends this review. If the suite times out after 10 minutes, run it in parts (for example one test directory per call), each in the foreground
 4. Do NOT re-run the full suite in the same review unless that run was broken by the environment (not by a test failure). Do NOT start parallel test runs, they compete for resources
 
 **Re-review:**

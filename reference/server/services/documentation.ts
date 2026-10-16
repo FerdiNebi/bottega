@@ -363,10 +363,9 @@ When running Playwright MCP tests, start the project's dev server on port ${devS
 When running the project's test suite:
 
 1. **Run targeted tests first**: Only run test files related to your changes. This gives fast feedback.
-2. **Full suite = background**: When running the complete test suite, ALWAYS use \`run_in_background: true\` on the Bash tool. Full suites can take 5-15 minutes and will exceed the default timeout.
-3. **Wait for backgrounded tests before re-launching**: If a test command gets backgrounded (you receive a task ID), wait for it to complete using TaskOutput with \`block: true\`. Do NOT start another test run while one is still running — parallel suites compete for resources and take even longer. Only re-launch if the previous run completed and failed.
-4. **Use fail-fast flags**: If the test framework supports it, use a fail-fast option to exit on first failure.
-5. **Set generous timeouts**: If not using run_in_background, set \`timeout: 600000\` (10 minutes) for full test suites.`);
+2. **Full suite = foreground with a long timeout**: Run the complete test suite in the foreground with \`timeout: 600000\` (10 minutes) on the Bash tool. Do NOT use \`run_in_background\`: nothing wakes you when a background command finishes, and ending your turn ends the run.
+3. **One suite at a time**: Do NOT start parallel test runs — they compete for resources and take even longer. If the suite times out after 10 minutes, run it in parts (for example one test directory per call), each in the foreground.
+4. **Use fail-fast flags**: If the test framework supports it, use a fail-fast option to exit on first failure.`);
 
   return sections.join('\n\n---\n\n');
 }

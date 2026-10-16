@@ -9,6 +9,7 @@ import {
   generatePrAgentCommentMessage,
   generatePrAgentReviewMessage,
   generateLearningsMessage,
+  generateReviewMessage,
 } from './agentPrompts.js';
 import { saveOverride, deleteOverride, toPromptPath } from '../services/promptRenderer.js';
 
@@ -282,21 +283,35 @@ describe('PR procedure: rebase first, never wait on a conflicting PR', () => {
     ]) {
       const conflictCheck = msg.indexOf('gh pr view --json mergeable --jq .mergeable');
       expect(conflictCheck).toBeGreaterThan(-1);
-      expect(conflictCheck).toBeLessThan(msg.indexOf('gh run watch'));
+      expect(conflictCheck).toBeLessThan(msg.indexOf('gh run list --commit'));
       expect(msg).toMatch(/GitHub does not run CI on a conflicting PR/);
     }
   });
 
-  it('waits on CI with one blocking watch, not a sleep-polling loop', async () => {
+  it('waits on CI with one bounded foreground command, not a background task', async () => {
     for (const msg of [
       await generatePrAgentMessage('/t.md', 1, null, 'main'),
       await generateYoloMessage('/t.md', 1, null, 'main'),
     ]) {
-      expect(msg).toContain('gh run watch "$id" --exit-status');
+      expect(msg).toContain('end=$((SECONDS + 480))');
       expect(msg).toContain('echo "CI: none"');
+      expect(msg).toContain('echo "CI: still running"');
+      expect(msg).toMatch(/Run it in the foreground with the Bash tool's `timeout: 600000`/);
       expect(msg).toMatch(/do NOT write your own polling or `sleep` loop/);
-      expect(msg).not.toContain('sleep 30');
+      expect(msg).not.toContain('gh run watch');
+      expect(msg).not.toContain('TaskOutput');
       expect(msg).not.toMatch(/python3? -c/);
+    }
+  });
+
+  it('never tells agents to wait on a background task (the CLI has no TaskOutput tool)', async () => {
+    for (const msg of [
+      await generatePrAgentMessage('/t.md', 1, null, 'main'),
+      await generateYoloMessage('/t.md', 1, null, 'main'),
+      await generateReviewMessage('/t.md', 1),
+    ]) {
+      expect(msg).not.toContain('TaskOutput');
+      expect(msg).not.toContain('run_in_background: true');
     }
   });
 
