@@ -131,6 +131,23 @@ describe('project bootstrap prompts', () => {
     expect(content).toMatch(/rejected alternatives/);
   });
 
+  it('the ARD session proposes the simplest architecture and justifies every component', () => {
+    const content = loadDefault('ard');
+    expect(content).toMatch(/simplest architecture that meets the requirements/);
+    expect(content).toMatch(/Justify every component with a specific requirement/);
+    expect(content).toMatch(/Do not add these by default/);
+    expect(content).toContain('**simplicity check**');
+  });
+
+  it("the ARD session researches third-party services for the users' location and records their docs", () => {
+    const content = loadDefault('ard');
+    expect(content).toContain('**Location**');
+    expect(content).toMatch(/Research every third-party service/);
+    expect(content).toMatch(/WebSearch/);
+    expect(content).toMatch(/official, latest API documentation/);
+    expect(content).toContain('**External services and integrations**');
+  });
+
   it('the task breakdown never commits', () => {
     expect(loadDefault('task-breakdown')).toMatch(/never commit, push, or open a pull request/i);
   });

@@ -215,6 +215,8 @@ repository, and asks only about what is missing:
 - scale: expected users, data volume, traffic peaks, growth
 - reliability: acceptable downtime, backup and recovery needs
 - security and compliance: personal data, regulations, data residency
+- location: where the business and its users are (drives data residency and
+  which providers are available, compliant, and affordable there)
 - who builds and maintains it, and their skills
 - timeline
 - existing accounts or infrastructure (cloud provider, domain, CI)
@@ -231,8 +233,28 @@ correction. It never asks an open technical question such as "Which database do
 you want?". A correction may revise earlier areas the agent then re-proposes,
 for example a lower budget changing the hosting plan.
 
+**Simplest architecture that meets the requirements.** The agent proposes the
+fewest moving parts: one deployable app and one database on a managed host,
+using what the framework, database, and host already provide (built-in logs,
+full-text search, a database-backed job queue). Every component must be tied to
+a specific PRD section or phase 1 answer. Caches/Redis, queues, microservices,
+Kubernetes, separate search engines, and third-party logging/APM/error tracking
+(Sentry, Axiom, Datadog, …) are not added by default; deferred items go under
+risks with the concrete trigger for adding them. Before the final confirmation
+the agent runs a simplicity check and proposes removing anything not tied to a
+requirement.
+
+**Third-party service research.** Before proposing any external service
+(including hosting and the managed database), the agent researches it on the
+web: it shortlists 2–4 candidates, compares them for the users' location
+(availability, data regions and residency, compliance, current pricing at the
+expected scale, SDK maturity), recommends one with sources, and finds the
+official, latest API reference, SDK (with version), and quickstart, opening
+each link to confirm it loads. Without web tools it marks choices and links as
+unverified and lists them as open questions.
+
 The understanding line tracks both phases (e.g. `Understanding: 80% — accepted
-9/14 areas; open: deployment, observability`), and the usual 99% bar and
+9/15 areas; open: deployment, observability`), and the usual 99% bar and
 `Write ARD now` confirmation apply.
 
 ### ARD coverage checklist
@@ -240,12 +262,18 @@ The understanding line tracks both phases (e.g. `Understanding: 80% — accepted
 Phase 2 covers: architectural style and system context · components/modules
 and their responsibilities · technology stack with rationale **and rejected
 alternatives** · project/directory structure (as a tree) · data model and storage
-· APIs and integration contracts · authentication, authorization, and security ·
+· APIs and integration contracts · **third-party services and integrations**
+(researched as above) · authentication, authorization, and security ·
 engineering patterns and coding conventions · **testing strategy** (test pyramid,
 tools, what is covered by unit / integration / E2E, coverage gates, how QA
 scenarios are run) · CI/CD, environments, and deployment · observability ·
 performance and scalability · key decisions in ADR style (decision, context,
 consequences) · risks and open questions.
+
+`ARD.md` includes an **External services and integrations** table: one row per
+service with its purpose, the requirement it serves, why it fits the users'
+location, region, estimated monthly cost, links to the official API reference,
+SDK (with version) and quickstart, and the date the links were checked.
 
 ## Creating the initial tasks
 
