@@ -6,6 +6,7 @@ import type { TaskRow } from '../../../shared/types/db';
 // Mock lucide-react icons
 vi.mock('lucide-react', () => ({
   MessageSquare: () => <span data-testid="icon-message-square" />,
+  Flag: () => <span data-testid="icon-flag" />,
   FileText: () => <span data-testid="icon-file-text" />,
   Pencil: () => <span data-testid="icon-pencil" />,
 }));
@@ -223,5 +224,26 @@ describe('BoardTaskCard Component', () => {
       const card = screen.getByTestId('board-task-card-t1');
       expect(card).toHaveAttribute('tabIndex', '0');
     });
+  });
+});
+
+describe('BoardTaskCard milestone badge', () => {
+  const props: BoardTaskCardProps = {
+    task: asTask({ id: 3, title: '4. Milestone: Sign in and view settings' }),
+    isLive: false,
+    conversationCount: 0,
+    docPreview: '',
+    onClick: vi.fn(),
+    onEditClick: vi.fn(),
+  };
+
+  it('marks milestone tasks', () => {
+    render(<BoardTaskCard {...props} />);
+    expect(screen.getByText('MILESTONE')).toBeInTheDocument();
+  });
+
+  it('does not mark ordinary tasks', () => {
+    render(<BoardTaskCard {...props} task={asTask({ id: 3, title: '2. Sign-in' })} />);
+    expect(screen.queryByText('MILESTONE')).not.toBeInTheDocument();
   });
 });

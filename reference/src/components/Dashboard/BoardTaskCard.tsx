@@ -7,9 +7,10 @@
  */
 
 import React, { useMemo } from 'react';
-import { MessageSquare, FileText, Pencil, GitBranch, Trash2 } from 'lucide-react';
+import { MessageSquare, FileText, Pencil, GitBranch, Trash2, Flag } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import type { TaskRow } from '../../../shared/types/db';
+import { isMilestoneTitle } from '../../../shared/milestones';
 
 /**
  * Extract plain text preview from markdown documentation
@@ -146,6 +147,19 @@ function BoardTaskCard({
 
       {/* Meta row: branch, conversation count + doc preview */}
       <div className="mt-2 flex flex-col gap-1.5">
+        {/* Milestone: a manual verification checkpoint (project bootstrap) */}
+        {isMilestoneTitle(task.title) && (
+          <div className="flex items-center gap-1.5 text-xs">
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+              title="Manual verification checkpoint: open the task and start verification"
+            >
+              <Flag className="w-3 h-3" />
+              MILESTONE
+            </span>
+          </div>
+        )}
+
         {/* Branch name */}
         {branchName && (
           <div className="flex items-center gap-1.5 text-xs">

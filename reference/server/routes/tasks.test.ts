@@ -94,6 +94,13 @@ vi.mock('../services/worktree.js', () => ({
   pushChanges: vi.fn()
 }));
 
+vi.mock('../services/milestoneVerification.js', () => ({
+  MilestoneSessionError: class MilestoneSessionError extends Error {
+    readonly status = 409;
+  },
+  startMilestoneSession: vi.fn(),
+}));
+
 // Mock the webServerManager service
 vi.mock('../services/webServerManager.js', () => ({
   switchWorktree: vi.fn()
@@ -1846,5 +1853,53 @@ describe('Tasks Routes - Phase 3', () => {
       expect(response.status).toBe(404);
       expect(response.body.error).toBe('Task not found');
     });
+  });
+});
+
+describe('POST /api/tasks/:id/milestone-session', () => {
+  let app: import('express').Application;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.mocked(hasProjectAccess).mockReturnValue(true);
+    vi.mocked(tasksDb.getWithProject).mockReturnValue({ id: 7, project_id: 1, title: '3. Milestone: Sign in' } as never);
+    app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      req.user = { id: 1, username: 'testuser' } as never;
+      next();
+    });
+    app.use('/api', tasksRoutes);
+  });
+
+  it('starts the verification session and returns the chat to open', async () => {
+    const { startMilestoneSession } = await import('../services/milestoneVerification.js');
+    vi.mocked(startMilestoneSession).mockResolvedValue({ taskId: 7, conversationId: 42, initialMessage: 'hi' });
+
+    const response = await request(app).post('/api/tasks/7/milestone-session');
+
+    expect(response.status).toBe(201);
+    expect(response.body).toEqual({ taskId: 7, conversationId: 42, initialMessage: 'hi' });
+    expect(startMilestoneSession).toHaveBeenCalledWith(expect.objectContaining({ taskId: 7, userId: 1 }));
+  });
+
+  it('returns 404 for a task outside the user\'s projects', async () => {
+    vi.mocked(hasProjectAccess).mockReturnValue(false);
+    expect((await request(app).post('/api/tasks/7/milestone-session')).status).toBe(404);
+  });
+
+  it('maps a refused session to 409 and missing credentials to 403', async () => {
+    const { startMilestoneSession, MilestoneSessionError } = await import('../services/milestoneVerification.js');
+    const { ProviderCredentialsMissingError } = await import('../services/credentials/types.js');
+
+    vi.mocked(startMilestoneSession).mockRejectedValue(new MilestoneSessionError('Only milestone tasks have a verification session'));
+    const refused = await request(app).post('/api/tasks/7/milestone-session');
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatch(/Only milestone tasks/);
+
+    vi.mocked(startMilestoneSession).mockRejectedValue(new ProviderCredentialsMissingError('anthropic', 'no token'));
+    const missing = await request(app).post('/api/tasks/7/milestone-session');
+    expect(missing.status).toBe(403);
+    expect(missing.body.code).toBe('PROVIDER_CREDENTIALS_MISSING');
   });
 });

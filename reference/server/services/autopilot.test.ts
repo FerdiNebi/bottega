@@ -45,6 +45,7 @@ vi.mock('./documentation.js', () => ({
   readTaskDoc: vi.fn((_projectId: number, taskId: number) => state.docs[taskId] ?? ''),
 }));
 vi.mock('./webServerManager.js', () => ({ switchWorktree: vi.fn() }));
+vi.mock('./milestoneVerification.js', () => ({ startMilestoneSession: vi.fn() }));
 vi.mock('./worktree.js', () => ({
   createWorktree: vi.fn(),
   getPullRequestStatus: vi.fn(),
@@ -60,6 +61,7 @@ vi.mock('./worktree.js', () => ({
 
 import { startAgentRun } from './agentRunner.js';
 import { switchWorktree } from './webServerManager.js';
+import { startMilestoneSession } from './milestoneVerification.js';
 import {
   createWorktree,
   getPullRequestStatus,
@@ -227,6 +229,15 @@ describe('planAutopilot', () => {
     expect(plan.blocked.map((t) => t.id)).toEqual([2]);
     expect(plan.running).toEqual({ task: expect.objectContaining({ id: 3 }), agentType: 'review' });
   });
+
+  it('puts a ready milestone before other pending tasks, after started ones', () => {
+    const plan = planAutopilot([
+      info(task(1, { title: '1. Other work' })),
+      info(task(2, { title: '4. Milestone: Sign in' })),
+      info(task(3, { title: '3. Menu', status: 'in_progress' }), { hasAgentRuns: true }),
+    ]);
+    expect(plan.ready.map((t) => t.id)).toEqual([3, 2, 1]);
+  });
 });
 
 describe('nextStepForTask', () => {
@@ -310,6 +321,37 @@ describe('startNextAutopilotTask', () => {
     const result = await startNextAutopilotTask(1, ctx);
     expect(result.status).toBe('idle');
     expect(state.project.autopilot_message).toMatch(/task #1 "Task 1" blocked; 1 task\(s\) waiting/);
+  });
+
+  it('starts the verification session at a milestone and stops instead of running an agent', async () => {
+    state.tasks = [task(1, { status: 'completed' }), task(2, { title: '2. Milestone: Sign in' })];
+    state.docs[2] = '## Depends on\n- 1. Sign-in (task #1)';
+    vi.mocked(startMilestoneSession).mockResolvedValue({ taskId: 2, conversationId: 9, initialMessage: 'm' });
+
+    const result = await startNextAutopilotTask(1, ctx);
+
+    expect(result).toMatchObject({ status: 'milestone', taskId: 2 });
+    expect(startMilestoneSession).toHaveBeenCalledWith(expect.objectContaining({ taskId: 2, userId: 5 }));
+    expect(startAgentRun).not.toHaveBeenCalled();
+    expect(state.project.autopilot_message).toMatch(/^Milestone reached: task #2 "2. Milestone: Sign in"/);
+  });
+
+  it('keeps waiting while a milestone is being verified', async () => {
+    state.tasks = [task(2, { title: '2. Milestone: Sign in', status: 'in_progress' }), task(3)];
+    state.docs[3] = '## Depends on\n- (task #2)';
+
+    const result = await startNextAutopilotTask(1, ctx);
+
+    expect(result.status).toBe('idle');
+    expect(state.project.autopilot_message).toMatch(/waiting for manual verification of task #2/);
+  });
+
+  it('stops with the reason when the verification session cannot start', async () => {
+    state.tasks = [task(2, { title: '2. Milestone: Sign in' })];
+    vi.mocked(startMilestoneSession).mockRejectedValue(new Error('Could not merge origin/main'));
+
+    expect((await startNextAutopilotTask(1, ctx)).status).toBe('failed');
+    expect(state.project.autopilot_message).toMatch(/^Stopped: could not start task #2.*Could not merge/);
   });
 
   it('records the failure and rethrows missing credentials for the route', async () => {

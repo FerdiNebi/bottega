@@ -7,14 +7,19 @@ import {
   createTasksFromBreakdown,
   parseCreateTasksArgs,
   topologicalOrder,
+  validateMilestones,
   validateTaskList,
   type CreateTasksDeps,
   type CreatedBreakdownTask,
   type TaskBreakdownItem,
 } from './taskBreakdown.js';
 
+function milestone(key: string, dependsOn: string[], title = key): TaskBreakdownItem {
+  return { ...task(key, dependsOn, title), kind: 'milestone' };
+}
+
 function task(key: string, dependsOn: string[] = [], title = key): TaskBreakdownItem {
-  return { key, title, dependsOn, spec: `## Goal\n${title}` };
+  return { key, title, dependsOn, kind: 'task', spec: `## Goal\n${title}` };
 }
 
 function valid(input: unknown): TaskBreakdownItem[] {
@@ -120,6 +125,59 @@ describe('validateTaskList', () => {
   });
 });
 
+describe('milestones', () => {
+  it('defaults kind to task and strips a Milestone: marker from the title', () => {
+    const [plain, check] = valid([
+      { key: 'a', title: 'A', spec: 'spec' },
+      { key: 'm', kind: 'milestone', title: '3. Milestone: Sign in', dependsOn: ['a'], spec: 'spec' },
+    ]);
+    expect(plain!.kind).toBe('task');
+    expect(check!.title).toBe('Sign in');
+  });
+
+  it('accepts milestones that form a chain covering every task', () => {
+    const tasks = valid([
+      task('skeleton'),
+      task('auth', ['skeleton']),
+      milestone('m1', ['auth']),
+      task('voice', ['m1']),
+      task('calls', ['voice']),
+      milestone('m2', ['calls']),
+    ]);
+    expect(validateMilestones(tasks)).toEqual([]);
+  });
+
+  it('requires at least one milestone', () => {
+    expect(validateMilestones(valid([task('a')]))[0]).toMatch(/no milestone/);
+  });
+
+  it('requires every task to be verified by some milestone', () => {
+    const errors = validateMilestones(valid([task('a'), task('b'), milestone('m', ['a'])]));
+    expect(errors).toEqual(['task "b": no milestone depends on it, so it would never be verified']);
+  });
+
+  it('rejects a milestone without dependencies or with nothing new to verify', () => {
+    const errors = validateMilestones(
+      valid([milestone('empty', []), task('a'), milestone('m1', ['a']), milestone('m2', ['m1'])]),
+    );
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        'milestone "empty": must depend on the tasks it verifies',
+        expect.stringMatching(/milestone "m2": verifies no task/),
+      ]),
+    );
+  });
+
+  it('requires a later milestone\'s tasks to depend on the previous milestone', () => {
+    const errors = validateMilestones(
+      valid([task('a'), milestone('m1', ['a']), task('b'), task('c', ['b', 'm1']), milestone('m2', ['c'])]),
+    );
+    expect(errors).toEqual([
+      'task "b": belongs to milestone "m2" and must depend (directly or through another task) on the previous milestone "m1"',
+    ]);
+  });
+});
+
 describe('buildTaskDoc', () => {
   it('appends a Depends on section with titles and task ids', () => {
     expect(buildTaskDoc('## Goal\nX\n', [{ id: 7, title: '1. Scaffold' }])).toBe(
@@ -197,6 +255,7 @@ describe('createTasksFromBreakdown', () => {
     task('scaffold', [], 'Project scaffold'),
     task('auth', ['scaffold'], 'Authentication'),
     task('menu', ['scaffold'], 'Menu management'),
+    milestone('ordering', ['orders'], 'Guests can order'),
   ];
 
   function createdTasks() {
@@ -212,10 +271,11 @@ describe('createTasksFromBreakdown', () => {
       '2. Authentication',
       '2. Menu management',
       '3. Guest ordering',
+      '4. Milestone: Guests can order',
     ]);
 
     const rows = createdTasks();
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(5);
     for (const row of rows) {
       expect(row.project_id).toBe(projectId);
       expect(row.user_id).toBe(userId);
@@ -231,7 +291,7 @@ describe('createTasksFromBreakdown', () => {
       `- 2. Authentication (task #${auth.id})\n- 2. Menu management (task #${menu.id})`,
     );
 
-    expect(deps.createWorktree).toHaveBeenCalledTimes(4);
+    expect(deps.createWorktree).toHaveBeenCalledTimes(5);
     expect(deps.createWorktree).toHaveBeenCalledWith('/repo', scaffold.id, '1. Project scaffold', null, 'origin/main');
     expect(testDb.tasksDb.getById(sessionTaskId)!.status).toBe('completed');
   });
@@ -262,6 +322,13 @@ describe('createTasksFromBreakdown', () => {
   it('creates nothing when the list is invalid', async () => {
     const result = await createTasksFromBreakdown(sessionTaskId, [task('a', ['b']), task('b', ['a'])], deps);
     expect(result.ok).toBe(false);
+    expect(createdTasks()).toHaveLength(0);
+  });
+
+  it('creates nothing when a task is not covered by a milestone', async () => {
+    const result = await createTasksFromBreakdown(sessionTaskId, [...breakdown, task('extra')], deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors).toEqual([expect.stringMatching(/task "extra": no milestone/)]);
     expect(createdTasks()).toHaveLength(0);
   });
 

@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { FileText, ArrowLeft, ChevronDown, Check, CheckCircle2, GitBranch, ExternalLink, GitMerge, Copy, ArrowUpRight, ArrowDownLeft, Upload, Server, ArrowDownToLine, Loader2, AlertCircle, X } from 'lucide-react';
+import { FileText, ArrowLeft, ChevronDown, Check, CheckCircle2, GitBranch, ExternalLink, GitMerge, Copy, ArrowUpRight, ArrowDownLeft, Upload, Server, ArrowDownToLine, Loader2, AlertCircle, X, Flag } from 'lucide-react';
 import { Button } from './ui/button';
 import Breadcrumb from './Breadcrumb';
 import MarkdownEditor from './MarkdownEditor';
@@ -22,6 +22,7 @@ import { api } from '../utils/api';
 import { cleanupWorktreeOnComplete } from '../utils/worktreeCleanup';
 import { useClaudeAuth } from '../contexts/ClaudeAuthContext';
 import type { Provider } from '../../shared/providers/types';
+import { isMilestoneTitle } from '../../shared/milestones';
 import type {
   ProjectRow,
   TaskRow,
@@ -162,6 +163,8 @@ function TaskDetailView({
   const [isMerging, setIsMerging] = useState(false);
   const [isDiscarding, setIsDiscarding] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
+  const [isStartingVerification, setIsStartingVerification] = useState(false);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
   const [isCreatingCIFixConversation, setIsCreatingCIFixConversation] = useState(false);
   const [showCIFixModal, setShowCIFixModal] = useState(false);
   const [worktreeError, setWorktreeError] = useState<string | null>(null);
@@ -489,6 +492,27 @@ Please:
     }
   };
 
+  const handleStartVerification = async () => {
+    if (!task?.id) return;
+    setIsStartingVerification(true);
+    setVerificationError(null);
+    try {
+      const response = await api.tasks.startMilestoneSession(task.id);
+      const data = (await response.json()) as
+        | { conversationId: number; initialMessage: string }
+        | { error?: string };
+      if (!response.ok || !('conversationId' in data)) {
+        throw new Error(('error' in data && data.error) || 'Failed to start verification');
+      }
+      // Same navigation as any conversation started with a first message.
+      onCIFixConversationCreated?.({ id: data.conversationId, __initialMessage: data.initialMessage });
+    } catch (err) {
+      setVerificationError((err as Error).message);
+    } finally {
+      setIsStartingVerification(false);
+    }
+  };
+
   const handleMergeWithoutPR = async () => {
     if (!task?.id) return;
     if (!confirm('Merge without PR? This commits any uncommitted changes, merges this branch into the default branch, pushes it to GitHub if the project has a remote, deletes the worktree, marks the task as completed, and returns to the project dashboard. Continue?')) {
@@ -566,6 +590,8 @@ Please:
   }, [conversations, onResumeConversation]);
 
   if (!task) return null;
+
+  const isMilestone = isMilestoneTitle(task.title);
 
   const currentStatus = STATUS_OPTIONS.find(s => s.value === task.status) ?? STATUS_OPTIONS[0]!;
 
@@ -1016,14 +1042,42 @@ Please:
             className="md:flex-1 md:min-h-0"
             hideContentOnMobile
           />
-          <AgentSection
-            agentRuns={agentRuns}
-            isLoading={isLoadingAgentRuns}
-            onRunAgent={onRunAgent}
-            onResumeAgent={handleResumeAgent}
-            yoloMode={task.yolo_mode === 1}
-            className="flex-shrink-0"
-          />
+          {isMilestone ? (
+            // A milestone is verified by hand, not run through the agent pipeline.
+            <div className="flex-shrink-0 border-t border-border p-4 space-y-2">
+              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Flag className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                Milestone verification
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {task.status === 'completed'
+                  ? 'This milestone was verified.'
+                  : 'Starts a chat that makes the app run, then gives you the setup, run and verification steps and helps you until the scenarios pass. When they do, finish with Merge without PR.'}
+              </p>
+              {task.status !== 'completed' && (
+                <Button size="sm" onClick={handleStartVerification} disabled={isStartingVerification}>
+                  {isStartingVerification ? (
+                    <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                  ) : (
+                    <Flag className="w-4 h-4 mr-1.5" />
+                  )}
+                  Start verification
+                </Button>
+              )}
+              {verificationError && (
+                <p className="text-xs text-red-600 dark:text-red-400">{verificationError}</p>
+              )}
+            </div>
+          ) : (
+            <AgentSection
+              agentRuns={agentRuns}
+              isLoading={isLoadingAgentRuns}
+              onRunAgent={onRunAgent}
+              onResumeAgent={handleResumeAgent}
+              yoloMode={task.yolo_mode === 1}
+              className="flex-shrink-0"
+            />
+          )}
           <ReviewRecording taskId={task.id} className="flex-shrink-0" />
         </div>
       </div>

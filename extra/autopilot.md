@@ -62,13 +62,38 @@ the doc.
 Among ready candidates the order is:
 
 1. `in_progress` before `pending` (finish what was started);
-2. the dependency level from the title prefix `N. `, lowest first; titles
+2. milestone tasks before other `pending` tasks, so autopilot stops at a
+   milestone as soon as it is reachable (see [Milestones](#milestones));
+3. the dependency level from the title prefix `N. `, lowest first; titles
    without a prefix come after all prefixed ones;
-3. task id, lowest first.
+4. task id, lowest first.
 
 Autopilot runs **one task at a time per project**. Each task starts from the
 code the previous one merged, so tasks never race each other into merge
 conflicts. Start returns 409 when any task in the project has a running agent.
+
+## Milestones
+
+A milestone task (title `N. Milestone: …`, see
+[`project-bootstrap.md`](./project-bootstrap.md#milestones-and-manual-verification))
+is a manual verification checkpoint, and autopilot **stops there**. When the
+next ready task is a milestone task, autopilot starts its verification session
+(the worktree refresh is part of it) instead of an agent, as the user carried on
+the context, and stops with:
+
+> Milestone reached: task #N "…". Open its chat for the setup, run and
+> verification steps. When it works, finish it with Merge without PR, then press
+> Start.
+
+The session is a manual chat, not an agent run, so the milestone task is then
+`in_progress` with no agent runs and is never a candidate; the tasks after it
+wait on it. Start, pressed before the milestone is completed, stops again with
+"waiting for manual verification of task #N". Once the human completes the
+milestone task (Merge without PR, or moving it to Completed), Start continues
+with the next milestone's tasks.
+
+If the session can't start (for example, the review agent's provider isn't
+connected), autopilot stops with that reason like any other start failure.
 
 ## Starting a task
 
@@ -187,6 +212,7 @@ push notification still fires. The reasons:
 - the PR's CI isn't green, or the PR isn't mergeable;
 - a worktree update or a merge failed;
 - an agent couldn't start (for example, missing provider credentials);
+- a milestone was reached, or is still waiting for manual verification;
 - no candidate is ready: `pending` tasks remain, but they all wait on a task that
   isn't completed (typically a blocked one);
 - done: every task is completed.
@@ -238,6 +264,9 @@ few seconds while autopilot is enabled.
 - [ ] Finishing: PR merge gate, local merge, mark completed, next task, the
       single-flight lock.
 - [ ] Board UI: checkbox, Start, status line.
+- [ ] Milestones: milestone tasks first among ready `pending` tasks; start the
+      verification session and stop; the "waiting for manual verification"
+      message.
 
 ## Reference map
 

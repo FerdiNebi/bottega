@@ -15,9 +15,13 @@ full of well-specified tasks the orchestration loop can run":
    correct. It then writes `ARD.md` (Architecture Requirements Document) and links
    it from `CLAUDE.md`.
 3. **Create initial tasks** — once both documents are merged, an agent breaks the
-   PRD + ARD into PR-sized tasks, shows the list in chat, and — on confirmation —
-   creates them as Bottega tasks whose titles encode their dependency level
-   (`1.`, `2.`, `3.`, …).
+   PRD + ARD into PR-sized **vertical** tasks grouped into **milestones**
+   (states of the product a person can try out and get value from), shows the
+   list in chat, and — on confirmation — creates them as Bottega tasks whose
+   titles encode their dependency level (`1.`, `2.`, `3.`, …). Each milestone
+   ends in a **milestone task**: a manual verification checkpoint that gives
+   the human setup, run, and verification instructions, and that
+   [autopilot](./autopilot.md) stops at.
 
 Sessions 1 and 2 each run in their own task worktree, so their output ships as a
 normal pull request the human reviews and merges.
@@ -259,11 +263,9 @@ missing and a re-check action), and the start endpoint independently returns
 The `task-breakdown` template instructs the agent to:
 
 1. Read `PRD.md`, `ARD.md`, and `CLAUDE.md` from its worktree.
-2. Decompose the work into **PR-sized vertical slices**. The first task(s) set up
-   the project skeleton the ARD prescribes (structure, tooling, lint, test
-   harness, CI), so later tasks have real conventions and tests to verify
-   against.
-3. Write each task as a small spec:
+2. Decompose the work into **PR-sized vertical slices** grouped into
+   **milestones** — see [Milestones](#milestones-and-manual-verification).
+3. Write each implementation task as a small spec:
 
    ```markdown
    ## Goal
@@ -277,21 +279,28 @@ The `task-breakdown` template instructs the agent to:
    - …
 
    ## QA scenarios
-   Scenarios the review agent must run to verify the goal.
+   Scenarios the review agent must run to verify the goal. At least one
+   exercises the slice in the running app, not only through mocked unit tests.
 
    ## Out of scope
    - …
    ```
 
+   and each milestone task as a verification spec (see
+   [below](#breakdown-rules-in-the-task-breakdown-template)).
 4. **Show the full list in chat before creating anything**, grouped by
-   dependency level, each line with its dependencies:
+   milestone, each line with its dependency level and dependencies:
 
    ```
-   1. Project scaffold
-   1. CI pipeline
-   2. Authentication            (depends on: Project scaffold)
-   2. Menu management           (depends on: Project scaffold)
-   3. Guest meal selection      (depends on: Authentication, Menu management)
+   Milestone A — A clinic admin can sign in and see their settings
+   1. Walking skeleton: app runs, health page
+   2. Sign-in                    (depends on: Walking skeleton)
+   3. Settings page              (depends on: Sign-in)
+   4. Milestone: Sign in and view settings   (depends on: Settings page)
+
+   Milestone B — The voice agent answers a call and books an appointment
+   5. Vapi webhook + call log    (depends on: Milestone: Sign in and view settings)
+   …
    ```
 
 5. Ask for confirmation (`Create these N tasks` / `Adjust`) and iterate on the
@@ -314,10 +323,13 @@ Input — an array validated with a schema:
 
 ```json
 [
-  { "key": "scaffold", "title": "Project scaffold", "dependsOn": [], "spec": "## Goal\n…" },
-  { "key": "auth", "title": "Authentication", "dependsOn": ["scaffold"], "spec": "…" }
+  { "key": "skeleton", "title": "Walking skeleton", "dependsOn": [], "spec": "## Goal\n…" },
+  { "key": "auth", "title": "Sign-in", "dependsOn": ["skeleton"], "spec": "…" },
+  { "key": "m-auth", "kind": "milestone", "title": "Sign in and view settings", "dependsOn": ["auth"], "spec": "…" }
 ]
 ```
+
+`kind` is `"task"` (the default) or `"milestone"`.
 
 The script:
 
@@ -326,8 +338,9 @@ The script:
   session task must be a `Create initial tasks` task that is not yet
   `completed`, so a rerun cannot create the list twice.
 - **Validates** unique `key`s, known `dependsOn` references, no cycles, non-empty
-  titles and specs. On any error it exits non-zero and prints every problem, so
-  the agent can correct the JSON in one pass.
+  titles and specs, and the [milestone rules](#milestone-rules). On any error it
+  exits non-zero and prints every problem, so the agent can correct the JSON in
+  one pass.
 - **Computes dependency levels itself** — it never trusts a prefix from the
   model (a leading `N. ` on a submitted title is stripped):
 
@@ -338,7 +351,9 @@ The script:
 
   So a task that depends on both a level-1 and a level-2 task is level 3.
 - **Creates tasks in topological order**, titled `"<level>. <title>"` (e.g.
-  `2. Authentication`). Each gets a worktree branched from `origin/<default>` and
+  `2. Authentication`); milestone tasks are titled
+  `"<level>. Milestone: <title>"` (a `Milestone:` the model put on the title is
+  stripped first, like the level). Each gets a worktree branched from `origin/<default>` and
   a task doc = the spec plus a `## Depends on` section that lists each dependency
   by **title and Bottega task id** (dependencies are created first, so their ids
   are known).
@@ -348,6 +363,119 @@ The script:
 
 The created tasks land in **Pending**. Nothing starts automatically; the human
 runs planning per task as usual.
+
+## Milestones and manual verification
+
+### Why
+
+Tasks that pass their own tests can still add up to an app nobody can start or
+use: every task was verified in isolation, often through mocks, and no one ever
+tried the product. A milestone is a point where a person can set up the app,
+run it, and do something that has value on its own: "a clinic admin can sign in
+and see their settings", "the voice agent answers a call", "a patient can book
+through Messenger". Milestones put a human check at each of those points,
+before more work piles onto a broken base.
+
+### Breakdown rules (in the `task-breakdown` template)
+
+- **Vertical, never horizontal.** A task cuts through every layer one
+  user-visible capability needs (schema, API, UI, wiring, tests). No "all the
+  models", "all the endpoints", "the whole UI" tasks.
+- **The first milestone is the thinnest end-to-end path a person can try:** the
+  project skeleton the ARD prescribes, running, plus the first real capability
+  (typically: sign in and see something of your own). The skeleton task belongs
+  to it rather than standing alone as invisible setup.
+- **Order milestones by value and risk.** Each external integration (a voice
+  provider, a messaging platform, payments) gets its own milestone, early if it
+  is risky, so the human sets up its accounts and proves it works before more is
+  built on it.
+- **A milestone is small** — a handful of tasks — and ends in one milestone
+  task that depends on the milestone's last tasks.
+- **Each later milestone builds on the verified previous one:** its tasks that
+  would otherwise have no dependencies depend on the previous milestone task.
+- A milestone task's spec is written for the human, not for an agent:
+
+  ```markdown
+  ## What you can do now
+  The capability, in the user's words.
+
+  ## Verification scenarios
+  1. Steps a person performs in the running app → the expected result.
+
+  ## External setup
+  Accounts, API keys, phone numbers, webhooks this milestone needs — or "None".
+
+  ## Not yet
+  What a tester might expect but that comes in a later milestone.
+  ```
+
+### Milestone rules
+
+The script enforces what makes milestones meaningful for ordering and autopilot.
+With milestones ordered topologically (by level, then list order):
+
+- the list has at least one milestone, and every milestone has dependencies;
+- every implementation task is a (transitive) dependency of some milestone, so
+  no work goes unverified;
+- a task belongs to the first milestone that covers it, and every milestone
+  owns at least one task no earlier milestone covers;
+- every task owned by a later milestone depends (transitively) on the previous
+  milestone task, so the milestones form a chain and work for milestone B never
+  runs before milestone A has been verified.
+
+### The verification session
+
+A milestone task is not run through planning, implementation, and review: there
+is nothing new to build. Instead it opens a **verification session** — a manual
+chat, the same composition as a bootstrap session, on the milestone task itself:
+
+1. The milestone task's worktree is brought up to date with the default branch
+   (`updateWorktreeFromDefault`; created from it when missing), so the session
+   sees everything the milestone's tasks merged.
+2. A conversation starts whose first message is the rendered
+   `milestone-verification` template, with the user's **review** agent
+   provider/model/effort (the agent that already knows how to run the project).
+   The task moves to `in_progress`.
+
+The template instructs the agent to:
+
+1. **Make it run first.** Read the milestone spec, `PRD.md`, `ARD.md`,
+   `CLAUDE.md` and the README; install dependencies, build, run the full test
+   suite, start the app, and walk the verification scenarios itself as far as it
+   can without the human's external accounts. Fix what is broken — small,
+   committed fixes on this task's branch — and say plainly what it could not get
+   working.
+2. **Write the guide** into the task doc under `## Verification guide` and post
+   it in chat: prerequisites (tools and versions); external accounts step by step
+   (where to sign up, which settings, which value goes into which env var, how to
+   expose a local webhook); configuration (every env var, with `.env.example`
+   kept current); setup (install, migrations, seed data, demo login); run (exact
+   commands, URLs, ports); the verification scenarios, each with steps, expected
+   result, and where to look when it fails; troubleshooting; and what is not in
+   this milestone. It also keeps the README's setup and run instructions
+   current, committed on the same branch.
+3. **Walk the human through it.** When they report a problem, reproduce it, fix
+   it on the branch, and tell them how to re-check. A problem too big to fix in
+   the session is written down under `## Open issues` in the task doc so the
+   human can turn it into a task.
+4. **Close.** When the human confirms the scenarios pass, tell them to finish
+   with Task Detail's **Merge without PR** (merges the fixes and docs, marks the
+   task completed) and, under autopilot, to press **Start** to continue.
+
+The session never pushes or opens a PR and never reads secret values (it never
+prints `.env`; the human fills it in). Like the bootstrap sessions it is a
+manual chat, so it keeps asking questions even under autopilot.
+
+Autopilot starts it when the milestone is next (see
+[`autopilot.md`](./autopilot.md#milestones)); by hand it starts from Task
+Detail's **Start verification** button, shown on milestone tasks that are not
+completed. The board marks milestone tasks with a badge.
+
+`POST /api/tasks/:id/milestone-session` → `201 { taskId, conversationId,
+initialMessage }`. **409** when the task is not a milestone task, is already
+completed, or the project is not a git repository; **403**
+`PROVIDER_CREDENTIALS_MISSING` when the review agent's provider is not
+connected. Project membership is checked like every task route.
 
 ### Dependencies are advisory
 
@@ -439,6 +567,10 @@ no default model.
       completed.
 - [ ] Board buttons (create/refine labels, gated tasks button) and a single
       bootstrap modal that opens the chat on success.
+- [ ] Milestones: `kind: "milestone"` items, the milestone rules, `Milestone:`
+      titles, the `milestone-verification` template, the verification-session
+      starter and route, the board badge, and Task Detail's **Start
+      verification**.
 
 ## Build order and tests (reference implementation)
 
@@ -521,7 +653,9 @@ tested on its own. Spec first, then pure logic, then I/O, then UI.
 | HTTP routes | `reference/server/routes/projects.ts` (`/bootstrap`) |
 | Request/response schemas | `reference/shared/schemas/projects.ts`, `reference/shared/api/projects.ts` |
 | Worktree base ref + remote fetch | `reference/server/services/worktree.ts` (`createWorktree`, `resolveBootstrapBase`) |
-| Session prompts | `reference/server/constants/prompts/{prd,ard,task-breakdown}.md` |
+| Session prompts | `reference/server/constants/prompts/{prd,ard,task-breakdown,milestone-verification}.md` |
+| Milestone title convention | `reference/shared/milestones.ts` |
+| Verification session | `reference/server/services/milestoneVerification.ts`, route in `reference/server/routes/tasks.ts` |
 | Prompt registry | `reference/server/services/promptRenderer.ts` (`PROMPT_DEFINITIONS`) |
 | Board buttons | `reference/src/components/Dashboard/BoardView.tsx` |
 | Bootstrap modal | `reference/src/components/BootstrapSessionModal.tsx` |

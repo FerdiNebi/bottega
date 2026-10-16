@@ -209,6 +209,10 @@ export interface SetAutopilotRequest {
 
 export interface StartAutopilotResponse {
   taskId: number;
-  /** The agent started, or `finish` when the task only needed merging. */
-  step: AgentType | 'finish';
+  /**
+   * The agent started, `finish` when the task only needed merging, or
+   * `milestone` when a milestone's verification session started and
+   * autopilot stopped for manual verification.
+   */
+  step: AgentType | 'finish' | 'milestone';
 }
