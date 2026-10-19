@@ -3,6 +3,7 @@ import path from 'path';
 import os from 'os';
 import { sqliteSessionStore } from '../sqliteSessionStore.js';
 import { PROTECT_BOTTEGA_MATCHER, protectBottegaHook } from '../processGuard.js';
+import { FOREGROUND_AGENTS_MATCHER, foregroundAgentsHook } from './foregroundAgents.js';
 import type { PermissionMode } from '@shared/websocket/messages';
 
 // bypassPermissions allows Claude to write files without prompting.
@@ -160,6 +161,8 @@ export function mapOptionsToSDK(options: MapOptionsInput): SDKOptions {
       hooks: [options.askUserQuestionHook],
     });
   }
+  // Sub-agents run in the foreground: see foregroundAgents.ts.
+  sdkOptions.hooks.PreToolUse!.push({ matcher: FOREGROUND_AGENTS_MATCHER, hooks: [foregroundAgentsHook] });
 
   if (sessionId) {
     sdkOptions.resume = sessionId;

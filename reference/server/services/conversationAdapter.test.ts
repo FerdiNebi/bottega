@@ -163,6 +163,7 @@ import {
 } from './conversationAdapter.js';
 import { isClaudeAuthError, AUTH_RETRY_BACKOFF_MS } from './conversation/retryOn401.js';
 import { protectBottegaHook } from './processGuard.js';
+import { foregroundAgentsHook } from './conversation/foregroundAgents.js';
 
 describe('conversationAdapter', () => {
   const mockTaskWithProject = {
@@ -901,6 +902,22 @@ it('should broadcast streaming-ended event when streaming completes', async () =
 
       const hooks = vi.mocked(query).mock.calls[0]![0].options!.hooks!;
       expect(hooks.PreToolUse![0]).toEqual({ matcher: 'Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit|Read', hooks: [protectBottegaHook] });
+    });
+
+    it('installs the PreToolUse hook that keeps sub-agents in the foreground', async () => {
+      vi.mocked(query).mockReturnValue({
+        [Symbol.asyncIterator]: () => ({
+          next: vi.fn()
+            .mockResolvedValueOnce({ value: { session_id: 'session-123', type: 'message' }, done: false })
+            .mockResolvedValueOnce({ value: { type: 'result', modelUsage: {} }, done: false })
+            .mockResolvedValueOnce({ done: true })
+        })
+      } as never);
+
+      await startConversation(1, 'Hello', { model: 'opus' });
+
+      const hooks = vi.mocked(query).mock.calls[0]![0].options!.hooks!;
+      expect(hooks.PreToolUse).toContainEqual({ matcher: 'Agent|Task|SendMessage', hooks: [foregroundAgentsHook] });
     });
 
     it('gates AskUserQuestion with a long-timeout PreToolUse hook and passes a canUseTool so the tool is offered', async () => {
