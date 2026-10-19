@@ -206,6 +206,18 @@ and the obvious "pass success/failure into the handler" design is the wrong one.
   (on `Read`) opening `.git-credentials` or the credential folder. It
   is coarse on purpose and only covers the Claude harness; other harnesses rely
   on the context warning.
+- **Keep sub-agents in the foreground.** The loop ends an agent's query at the
+  turn's `result`, so anything still running in the background is lost: an
+  agent that spawns a background sub-agent and ends its turn "waiting for it"
+  is aborted before the sub-agent reports back, and the stage ends without
+  its output (a planner once stopped autopilot this way). Background
+  sub-agents may also not inherit the parent's permission mode, so their
+  shell calls are refused. Where the harness backgrounds sub-agents by
+  default, force them into the foreground: the reference installs a Claude
+  SDK `PreToolUse` hook on `Agent` that rewrites `run_in_background` to
+  `false`, and refuses `SendMessage`, since a resumed sub-agent always runs in
+  the background. See
+  [`reference/server/services/conversation/foregroundAgents.ts`](../reference/server/services/conversation/foregroundAgents.ts).
 - **Leave a trail when the server dies.** A forced kill runs no handler, so
   keep a heartbeat in a state file and record clean exits. When the next start
   finds no clean exit, log when the old server was last alive and the
