@@ -174,8 +174,8 @@ describe('milestone verification prompt', () => {
   it('is registered and renders exactly its declared variables', () => {
     const def = getPromptDefinition('milestone-verification');
     expect(def).not.toBeNull();
-    expect([...def!.variables].sort()).toEqual(['taskDocPath', 'taskId']);
-    expect(extractVariables(loadDefault('milestone-verification')).sort()).toEqual(['taskDocPath', 'taskId']);
+    expect([...def!.variables].sort()).toEqual(['scriptsDir', 'taskDocPath', 'taskId']);
+    expect(extractVariables(loadDefault('milestone-verification')).sort()).toEqual(['scriptsDir', 'taskDocPath', 'taskId']);
     const rendered = renderPrompt('milestone-verification', VARS);
     expect(rendered).not.toMatch(/\{\{\w+\}\}/);
     expect(rendered).toContain('/docs/task-77.md');
@@ -195,6 +195,21 @@ describe('milestone verification prompt', () => {
     const content = loadDefault('milestone-verification');
     expect(content).toMatch(/Only when the human confirms/);
     expect(content).toContain('Merge without PR');
+  });
+
+  it('turns every change the human asks for into a confirmed follow-up task', () => {
+    const content = loadDefault('milestone-verification');
+    expect(content).toMatch(/every change the human asks for becomes a follow-up task/);
+    expect(content).toMatch(/Only the human decides that a follow-up task is created/);
+    const rendered = renderPrompt('milestone-verification', VARS);
+    expect(rendered).toMatch(/tsx \S+\/milestone-task\.ts create 77 <jsonPath>/);
+    expect(rendered).toMatch(/tsx \S+\/milestone-task\.ts list 77/);
+    expect(rendered).toMatch(/tsx \S+\/milestone-task\.ts sync 77/);
+    expect(rendered).not.toContain('{{scriptsDir}}');
+  });
+
+  it('closes only when no follow-up task is open', () => {
+    expect(loadDefault('milestone-verification')).toMatch(/no open follow-up task/);
   });
 
   it('never pushes, opens a PR, or reads secrets', () => {

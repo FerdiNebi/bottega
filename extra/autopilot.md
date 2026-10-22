@@ -92,6 +92,14 @@ wait on it. Start, pressed before the milestone is completed, stops again with
 milestone task (Merge without PR, or moving it to Completed), Start continues
 with the next milestone's tasks.
 
+Changes the human asks for during verification become follow-up tasks with no
+dependencies (see
+[`project-bootstrap.md`](./project-bootstrap.md#follow-up-tasks)). While the
+milestone waits, the next milestone's tasks wait on it but the follow-up tasks
+are ready, so Start runs each through the whole pipeline and merges it, then
+stops at the milestone again; the session syncs its worktree and the human
+re-verifies.
+
 If the session can't start (for example, the review agent's provider isn't
 connected), autopilot stops with that reason like any other start failure.
 

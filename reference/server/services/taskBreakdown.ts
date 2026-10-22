@@ -39,6 +39,11 @@ const LEVEL_PREFIX = /^\d+\.\s+/;
 // Same for the milestone marker, which the script adds from `kind`.
 const MILESTONE_MARKER = /^milestone:\s*/i;
 
+/** A title without a level prefix or milestone marker the model put on it. */
+export function cleanTaskTitle(title: string): string {
+  return title.replace(LEVEL_PREFIX, '').replace(MILESTONE_MARKER, '').trim() || title;
+}
+
 function describeTask(task: TaskBreakdownItem, index: number): string {
   return `task[${index}] "${task.key}"`;
 }
@@ -61,7 +66,7 @@ export function validateTaskList(input: unknown): ValidateTaskListResult {
 
   const tasks = parsed.data.map((task) => ({
     ...task,
-    title: task.title.replace(LEVEL_PREFIX, '').replace(MILESTONE_MARKER, '').trim() || task.title,
+    title: cleanTaskTitle(task.title),
   }));
   const errors: string[] = [];
 
