@@ -482,13 +482,20 @@ The template instructs the agent to:
    result, and where to look when it fails; troubleshooting; and what is not in
    this milestone. It also keeps the README's setup and run instructions
    current, committed on the same branch.
-3. **Walk the human through it.** When they report a problem, reproduce it, fix
-   it on the branch, and tell them how to re-check. A problem too big to fix in
-   the session is written down under `## Open issues` in the task doc so the
-   human can turn it into a task.
-4. **Close.** When the human confirms the scenarios pass, tell them to finish
-   with Task Detail's **Merge without PR** (merges the fixes and docs, marks the
-   task completed) and, under autopilot, to press **Start** to continue.
+3. **Walk the human through it.** When they report a problem, reproduce it and
+   find the cause. Every change the human asks for — a bug fix, a missing
+   behavior, a UX tweak — becomes a [follow-up task](#follow-up-tasks) instead
+   of a fix in the chat, so it gets planning, implementation, review,
+   refinement, learnings and a PR like any other task. After step 1 the
+   session commits only corrections to the guide, the README and
+   `.env.example`.
+4. **Re-verify.** Once a follow-up task is merged, the session brings its
+   worktree up to date with the default branch and walks the human through
+   the affected scenarios again.
+5. **Close.** When the human confirms the scenarios pass and no follow-up task
+   is open, tell them to finish with Task Detail's **Merge without PR** (merges
+   the fixes and docs, marks the task completed) and, under autopilot, to
+   press **Start** to continue.
 
 The session never pushes or opens a PR and never reads secret values (it never
 prints `.env`; the human fills it in). Like the bootstrap sessions it is a
@@ -504,6 +511,53 @@ initialMessage }`. **409** when the task is not a milestone task, is already
 completed, or the project is not a git repository; **403**
 `PROVIDER_CREDENTIALS_MISSING` when the review agent's provider is not
 connected. Project membership is checked like every task route.
+
+### Follow-up tasks
+
+The human reviews the milestone in its chat, so that is where changes come
+up. The session turns each one into a task the human can start right away,
+with the `milestone-task.ts` script (same pattern as `create-tasks.ts`: the
+agent signals intent by running a script; the UI never parses agent output):
+
+```
+tsx {{scriptsDir}}/milestone-task.ts create <milestoneTaskId> <jsonPath>
+tsx {{scriptsDir}}/milestone-task.ts list <milestoneTaskId>
+tsx {{scriptsDir}}/milestone-task.ts sync <milestoneTaskId>
+```
+
+**`create`** takes one task, `{ "title": "…", "spec": "## Goal\n…" }`. The
+session writes the spec like a breakdown task (Goal, References, Acceptance
+criteria, QA scenarios, Out of scope) plus a `## Findings` section with what
+it learned reproducing the problem: steps, observed vs. expected, the cause
+and the files involved. It shows the title and spec to the human and asks
+before creating; several changes asked for at once become several tasks, one
+per change. The script:
+
+- requires a milestone task that is not `completed`; the new task goes into
+  the milestone's project, owned by the milestone's owner;
+- titles the task as given (a `N. ` or `Milestone:` prefix is stripped), so it
+  has no dependency level and is not a milestone;
+- **branches the task's worktree from the milestone task's branch**, so the
+  task starts from the app as the human sees it, including the session's own
+  fixes and docs (from `origin/<default>` when the milestone has no
+  worktree);
+- writes the task doc: the spec, `## Depends on` with `- None` — nothing holds
+  the task back — and `## Raised in` naming the milestone (`<title> (task
+  #M)`);
+- appends `- <title> (task #N)` to a `## Follow-up tasks` section of the
+  milestone task doc (added at the end when missing);
+- is all-or-nothing: on a failure it removes the task, worktree and doc it
+  created and leaves the milestone doc alone.
+
+The task lands in **Pending**, ready to start: by hand from Task Detail
+(planning, or YOLO), or with autopilot's **Start** (see
+[`autopilot.md`](./autopilot.md#milestones)).
+
+**`list`** prints the tasks under the milestone's `## Follow-up tasks` with
+id, title and status, and how many are still open. **`sync`** merges the
+default branch into the milestone's worktree (`updateWorktreeFromDefault`) so
+the session can re-verify merged follow-ups; a failed merge is aborted and
+reported.
 
 ### Dependencies are advisory
 
@@ -599,6 +653,10 @@ no default model.
       titles, the `milestone-verification` template, the verification-session
       starter and route, the board badge, and Task Detail's **Start
       verification**.
+- [ ] Follow-up tasks: `milestone-task.ts` `create` (milestone tasks only,
+      branched from the milestone branch, `## Raised in` and
+      `## Follow-up tasks` links, rollback), `list` and `sync`, and the
+      verification template's follow-up rules.
 
 ## Build order and tests (reference implementation)
 
@@ -684,6 +742,7 @@ tested on its own. Spec first, then pure logic, then I/O, then UI.
 | Session prompts | `reference/server/constants/prompts/{prd,ard,task-breakdown,milestone-verification}.md` |
 | Milestone title convention | `reference/shared/milestones.ts` |
 | Verification session | `reference/server/services/milestoneVerification.ts`, route in `reference/server/routes/tasks.ts` |
+| Follow-up tasks | `reference/server/services/milestoneFollowUps.ts`, script `reference/scripts/milestone-task.ts` |
 | Prompt registry | `reference/server/services/promptRenderer.ts` (`PROMPT_DEFINITIONS`) |
 | Board buttons | `reference/src/components/Dashboard/BoardView.tsx` |
 | Bootstrap modal | `reference/src/components/BootstrapSessionModal.tsx` |

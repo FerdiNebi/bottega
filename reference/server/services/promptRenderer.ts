@@ -157,7 +157,7 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     label: 'Milestone Verification',
     kind: 'prompt',
     file: 'milestone-verification.md',
-    variables: ['taskId', 'taskDocPath'],
+    variables: ['taskId', 'taskDocPath', 'scriptsDir'],
   },
   {
     name: 'autopilot',

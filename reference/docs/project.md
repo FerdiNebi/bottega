@@ -115,6 +115,7 @@ scripts/
   complete-workflow.ts   Set workflow_complete=1 (agents run this)
   complete-pr.ts         Set pr_agent_complete=1 (agents run this)
   create-tasks.ts        Create a bootstrap task breakdown (agents run this)
+  milestone-task.ts      Create/list follow-up tasks of a milestone, sync its worktree (agents run this)
   data-migrations/       One-shot scripts (e.g. import-jsonl-to-sqlite.ts)
   guard-no-js.ts         CI prelint: rejects .js files outside the allowlist
 
