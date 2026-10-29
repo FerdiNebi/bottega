@@ -64,6 +64,9 @@ below. See `generatePrAgentMessage` / `buildPrCreateOrVerifyBlock` in
    - *Passed* → go to the conflict check.
    - *Failed* → pull the failing logs, fix the cause in the worktree, commit and
      push, and re-poll — on a bounded number of fix iterations.
+   With the [local CI extra](../extra/local-ci.md) turned on for the project,
+   steps 2–3 run the project's CI steps in the worktree instead of waiting
+   for hosted CI.
 4. **Conflict check (once CI is green, or as soon as step 2 sees a conflict).**
    Inspect the PR's mergeability.
    - *Mergeable* → run the completion script that sets `pr_agent_complete`.

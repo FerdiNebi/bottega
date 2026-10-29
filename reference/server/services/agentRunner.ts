@@ -121,17 +121,18 @@ export async function startAgentRun(
       const prStatus = await getPullRequestStatus(taskWithProject.repo_folder_path, taskId);
       const prUrl = prStatus.exists ? prStatus.url ?? null : null;
       const baseBranch = await getBaseBranch(taskWithProject.repo_folder_path);
+      const ciMode = taskWithProject.ci_mode;
 
       // Use review-specific prompt if triggered by webhook with review comments
       // Use comment-specific prompt if triggered by webhook with single comment context
       const webhookCtx = options.webhookContext;
       if (webhookCtx?.comments) {
         // Shape is validated by the webhook route (commit 5: zod boundary).
-        message = await generatePrAgentReviewMessage(taskDocPath, taskId, prUrl, webhookCtx as never, baseBranch);
+        message = await generatePrAgentReviewMessage(taskDocPath, taskId, prUrl, webhookCtx as never, baseBranch, ciMode);
       } else if (webhookCtx) {
-        message = await generatePrAgentCommentMessage(taskDocPath, taskId, prUrl, webhookCtx as never, baseBranch);
+        message = await generatePrAgentCommentMessage(taskDocPath, taskId, prUrl, webhookCtx as never, baseBranch, ciMode);
       } else {
-        message = await generatePrAgentMessage(taskDocPath, taskId, prUrl, baseBranch);
+        message = await generatePrAgentMessage(taskDocPath, taskId, prUrl, baseBranch, ciMode);
       }
       break;
     }
@@ -143,6 +144,7 @@ export async function startAgentRun(
         taskId,
         yoloPrUrl,
         await getBaseBranch(taskWithProject.repo_folder_path),
+        taskWithProject.ci_mode,
       );
       break;
     }

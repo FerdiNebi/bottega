@@ -45,6 +45,7 @@ function ProjectEditPageWrapper() {
   const [cleanupResult, setCleanupResult] = useState<CleanupOldCompletedTasksResponse | null>(null);
 
   const [subprojectPath, setSubprojectPath] = useState('');
+  const [localCi, setLocalCi] = useState(false);
 
   const [serveSymlinkPath, setServeSymlinkPath] = useState('');
   const [systemdServiceName, setSystemdServiceName] = useState('');
@@ -88,6 +89,7 @@ function ProjectEditPageWrapper() {
     if (project) {
       setName(project.name || '');
       setSubprojectPath(project.subproject_path || '');
+      setLocalCi(project.ci_mode === 'local');
       setHasChanges(false);
       setError(null);
     }
@@ -123,11 +125,12 @@ function ProjectEditPageWrapper() {
     if (!project) return;
     const nameChanged = name !== (project.name || '');
     const subprojectChanged = subprojectPath !== (project.subproject_path || '');
+    const ciModeChanged = localCi !== (project.ci_mode === 'local');
     const webServerChanged = serveSymlinkPath !== initialWebServerConfig.serveSymlinkPath ||
       systemdServiceName !== initialWebServerConfig.systemdServiceName ||
       appUrl !== initialWebServerConfig.appUrl;
-    setHasChanges(nameChanged || subprojectChanged || webServerChanged);
-  }, [name, project, subprojectPath, serveSymlinkPath, systemdServiceName, appUrl, initialWebServerConfig]);
+    setHasChanges(nameChanged || subprojectChanged || ciModeChanged || webServerChanged);
+  }, [name, project, subprojectPath, localCi, serveSymlinkPath, systemdServiceName, appUrl, initialWebServerConfig]);
 
   // Handle save
   const handleSave = useCallback(async () => {
@@ -145,6 +148,7 @@ function ProjectEditPageWrapper() {
       const result = await updateProject(project.id, {
         name: name.trim(),
         subprojectPath: subprojectPath.trim() || undefined,
+        ciMode: localCi ? 'local' : 'github',
       });
 
       if (!result.success) {
@@ -177,7 +181,7 @@ function ProjectEditPageWrapper() {
     } finally {
       setIsSaving(false);
     }
-  }, [project, name, subprojectPath, serveSymlinkPath, systemdServiceName, appUrl, initialWebServerConfig, updateProject, navigate, projectId]);
+  }, [project, name, subprojectPath, localCi, serveSymlinkPath, systemdServiceName, appUrl, initialWebServerConfig, updateProject, navigate, projectId]);
 
   // Handle delete
   const handleDelete = useCallback(async () => {
@@ -349,6 +353,26 @@ function ProjectEditPageWrapper() {
             <div className="px-3 py-2 bg-muted/50 border border-border rounded-md text-sm text-muted-foreground font-mono">
               {project.repo_folder_path || 'No folder path'}
             </div>
+          </div>
+
+          {/* Local CI (extra/local-ci.md) */}
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <input
+                type="checkbox"
+                checked={localCi}
+                onChange={(e) => setLocalCi(e.target.checked)}
+                className="h-4 w-4"
+                data-testid="local-ci-checkbox"
+              />
+              Run CI locally for pull requests
+            </label>
+            <p className="text-xs text-muted-foreground">
+              The PR agent runs the project's CI steps in the task's worktree instead of waiting for
+              GitHub checks on the PR. To stop GitHub from running CI on PRs, remove
+              the <code>pull_request</code> trigger from the project's workflow so that it only runs on
+              pushes to the default branch.
+            </p>
           </div>
 
           {/* Web Server Configuration */}

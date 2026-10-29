@@ -20,6 +20,8 @@ export const UpdateProjectBodySchema = z.object({
   // The DB layer accepts `null` to clear the column, and the existing
   // type `UpdateProjectRequest` allows `undefined`. Be permissive here.
   subprojectPath: z.string().nullable().optional(),
+  // extra/local-ci.md
+  ciMode: z.enum(['github', 'local']).optional(),
 });
 export type UpdateProjectBody = z.infer<typeof UpdateProjectBodySchema>;
 

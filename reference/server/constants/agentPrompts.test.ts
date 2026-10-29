@@ -345,3 +345,37 @@ describe('generateLearningsMessage', () => {
     expect(msg).toContain('git add CLAUDE.md && git commit -m "Update project knowledge in CLAUDE.md"');
   });
 });
+
+describe('local CI mode (extra/local-ci.md)', () => {
+  const local = async () => [
+    await generatePrAgentMessage('/t.md', 1, null, 'main', 'local'),
+    await generateYoloMessage('/t.md', 1, null, 'main', 'local'),
+    await generatePrAgentCommentMessage('/t.md', 1, 'https://x/pr/1', { commentBody: 'fix' }, 'main', 'local'),
+    await generatePrAgentReviewMessage('/t.md', 1, 'https://x/pr/1', { reviewBody: 'fix' }, 'main', 'local'),
+  ];
+
+  it('runs the workflow steps locally instead of waiting on GitHub checks', async () => {
+    for (const msg of await local()) {
+      expect(msg).toContain('This project uses **local CI**');
+      expect(msg).toContain('run on a push to `main`');
+      expect(msg).toContain('gh pr comment --body "Local CI at');
+      expect(msg).not.toContain('gh run list --commit');
+      expect(msg).not.toContain('echo "CI: none"');
+      expect(msg).toContain('complete-pr.ts 1');
+    }
+  });
+
+  it('keeps steps in the foreground and never runs deploy work', async () => {
+    for (const msg of await local()) {
+      expect(msg).toMatch(/each in the foreground with the Bash tool's `timeout: 600000`/);
+      expect(msg).toMatch(/NEVER run deploy or publish work/);
+      expect(msg).toContain('${{ secrets.* }}');
+    }
+  });
+
+  it('defaults to GitHub CI', async () => {
+    const msg = await generatePrAgentMessage('/t.md', 1, null, 'main');
+    expect(msg).toContain('gh run list --commit');
+    expect(msg).not.toContain('local CI');
+  });
+});

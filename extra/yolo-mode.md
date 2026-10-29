@@ -50,8 +50,8 @@ walks the agent through five phases in sequence:
    ticking a box.
 4. **Mark workflow complete** — run `complete-workflow.ts` (sets
    `workflow_complete`).
-5. **PR + CI** — create-or-verify the PR, poll CI, fix failures, resolve
-   conflicts, and finish by running **`complete-pr.ts`** (sets
+5. **PR + CI** — create-or-verify the PR, poll CI (or run it locally, with
+   [local CI](./local-ci.md)), fix failures, resolve conflicts, and finish by running **`complete-pr.ts`** (sets
    `pr_agent_complete`).
 
 That last script is what makes YOLO **terminal**: completing the run sets

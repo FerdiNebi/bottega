@@ -4,7 +4,7 @@
 //  - /api/projects/:id/web-server*      (mounted via webServer.js)
 //  - /api/projects/:id/files            (inline handler in server/index.js)
 
-import type { AgentType, ProjectRow } from '../types/db';
+import type { AgentType, CiMode, ProjectRow } from '../types/db';
 import { expectType } from './_common';
 
 // ---- Project CRUD ---------------------------------------------------------
@@ -31,6 +31,7 @@ export interface UpdateProjectRequest {
   name?: string | undefined;
   repoFolderPath?: string | undefined;
   subprojectPath?: string | undefined;
+  ciMode?: CiMode | undefined;
 }
 
 export type UpdateProjectResponse = ProjectRow;

@@ -8,6 +8,7 @@
  * to change agent behavior without touching code.
  */
 
+import type { CiMode } from '../../shared/types/db.js';
 import {
   renderPrompt,
   resolvePromptPath,
@@ -52,7 +53,7 @@ function buildPrCreateOrVerifyBlock(
 ): string {
   // Rebasing before the first push (and before reusing an existing PR) keeps
   // the PR from starting out conflicting: GitHub runs no CI on a conflicting
-  // PR, so the CI wait below would never end.
+  // PR, so the GitHub CI wait would never end.
   const rebaseStep = `Rebase onto the latest \`${baseBranch}\` so the PR doesn't start out conflicting:
    \`\`\`bash
    git fetch origin ${baseBranch} && git rebase origin/${baseBranch}
@@ -80,6 +81,17 @@ Create a PR for this task:
 5. Push to origin. \`--force-with-lease\` because the rebase may have rewritten commits an earlier run already pushed: \`git push --force-with-lease -u origin $(git branch --show-current)\`
 6. Create PR with a short specific title and concise summary body. Replace the placeholders with the actual task title and implementation summary:
    \`gh pr create --base ${baseBranch} --title "<short task title>" --body "Summary: <what the task does and how this implementation solves it. Keep this to a short paragraph. Task: #${taskId}>"\``;
+}
+
+/**
+ * Pre-rendered {{ciCheckBlock}}: the CI step of pr.md, yolo.md and
+ * pr-feedback.md. GitHub mode waits for the PR's Actions runs; local mode runs
+ * the workflow's steps in the worktree (extra/local-ci.md).
+ */
+function buildCiCheckBlock(ciMode: CiMode, taskDocPath: string, baseBranch: string): string {
+  return ciMode === 'local'
+    ? renderPrompt('ci-local', { taskDocPath, baseBranch })
+    : renderPrompt('ci-github', {});
 }
 
 export async function generatePlanificationMessage(
@@ -124,12 +136,14 @@ export async function generatePrAgentMessage(
   taskId: number,
   prUrl: string | null | undefined,
   baseBranch: string,
+  ciMode: CiMode = 'github',
 ): Promise<string> {
   const prContextLine = prUrl
     ? `- Existing PR: ${prUrl}`
     : '- No PR exists yet - you need to create one';
   const prCreateOrVerifyBlock = buildPrCreateOrVerifyBlock(taskId, prUrl, baseBranch);
-  return renderPrompt('pr', { taskDocPath, taskId, prContextLine, prCreateOrVerifyBlock, baseBranch });
+  const ciCheckBlock = buildCiCheckBlock(ciMode, taskDocPath, baseBranch);
+  return renderPrompt('pr', { taskDocPath, taskId, prContextLine, prCreateOrVerifyBlock, ciCheckBlock, baseBranch });
 }
 
 export async function generateYoloMessage(
@@ -137,12 +151,14 @@ export async function generateYoloMessage(
   taskId: number,
   prUrl: string | null | undefined,
   baseBranch: string,
+  ciMode: CiMode = 'github',
 ): Promise<string> {
   const prContextLine = prUrl
     ? `- Existing PR: ${prUrl}`
     : '- No PR exists yet - you will create one at the end';
   const prCreateOrVerifyBlock = buildPrCreateOrVerifyBlock(taskId, prUrl, baseBranch);
-  return renderPrompt('yolo', { taskDocPath, taskId, prContextLine, prCreateOrVerifyBlock, baseBranch });
+  const ciCheckBlock = buildCiCheckBlock(ciMode, taskDocPath, baseBranch);
+  return renderPrompt('yolo', { taskDocPath, taskId, prContextLine, prCreateOrVerifyBlock, ciCheckBlock, baseBranch });
 }
 
 export async function generatePrAgentCommentMessage(
@@ -151,6 +167,7 @@ export async function generatePrAgentCommentMessage(
   prUrl: string | null | undefined,
   webhookContext: CommentWebhookContext,
   baseBranch: string,
+  ciMode: CiMode = 'github',
 ): Promise<string> {
   const { commentBody, commentAuthor, fileContext } = webhookContext || {};
 
@@ -191,7 +208,8 @@ ${fileContext.diffHunk}
 ${quotedComment}
 ${fileLocationSection}`;
 
-  return renderPrompt('pr-feedback', { taskDocPath, taskId, prUrl, feedbackSection, baseBranch });
+  const ciCheckBlock = buildCiCheckBlock(ciMode, taskDocPath, baseBranch);
+  return renderPrompt('pr-feedback', { taskDocPath, taskId, prUrl, feedbackSection, ciCheckBlock, baseBranch });
 }
 
 export async function generatePrAgentReviewMessage(
@@ -200,6 +218,7 @@ export async function generatePrAgentReviewMessage(
   prUrl: string | null | undefined,
   webhookContext: ReviewWebhookContext,
   baseBranch: string,
+  ciMode: CiMode = 'github',
 ): Promise<string> {
   const { reviewBody, reviewAuthor, comments } = webhookContext || {};
 
@@ -257,7 +276,8 @@ ${commentEntries}
 
   const feedbackSection = `## User Feedback${reviewBodySection}${inlineCommentsSection}`;
 
-  return renderPrompt('pr-feedback', { taskDocPath, taskId, prUrl, feedbackSection, baseBranch });
+  const ciCheckBlock = buildCiCheckBlock(ciMode, taskDocPath, baseBranch);
+  return renderPrompt('pr-feedback', { taskDocPath, taskId, prUrl, feedbackSection, ciCheckBlock, baseBranch });
 }
 
 /**

@@ -144,6 +144,7 @@ beforeEach(() => {
     app_url: null,
     autopilot_enabled: 1,
     autopilot_message: null,
+    ci_mode: 'github',
     created_at: '',
     updated_at: '',
   };
@@ -414,6 +415,32 @@ describe('finishing a task (onAutopilotRunCompleted after PR / yolo)', () => {
     expect(state.project.autopilot_message).toMatch(reason);
     await vi.advanceTimersByTimeAsync(1000);
     expect(startAgentRun).not.toHaveBeenCalled();
+  });
+
+  it.each([['pending'], ['failed']])(
+    'merges in local CI mode even when the PR hosted CI is %s',
+    async (status) => {
+      state.project.ci_mode = 'local';
+      state.tasks = [task(1, { status: 'in_progress', pr_agent_complete: 1 })];
+      openPr({ ciStatus: { status, checks: [] } });
+      vi.mocked(mergeAndCleanup).mockResolvedValue({ success: true });
+
+      await onAutopilotRunCompleted(1, 'pr', ctx);
+
+      expect(mergeAndCleanup).toHaveBeenCalledWith('/repo', 1);
+      expect(state.tasks[0]!.status).toBe('completed');
+    },
+  );
+
+  it('still requires a mergeable PR in local CI mode', async () => {
+    state.project.ci_mode = 'local';
+    state.tasks = [task(1, { status: 'in_progress', pr_agent_complete: 1 })];
+    openPr({ mergeable: 'CONFLICTING' });
+
+    await onAutopilotRunCompleted(1, 'pr', ctx);
+
+    expect(mergeAndCleanup).not.toHaveBeenCalled();
+    expect(state.project.autopilot_message).toMatch(/not mergeable \(CONFLICTING\)/);
   });
 
   it('finishes a task whose PR is already merged (an earlier cleanup failed)', async () => {

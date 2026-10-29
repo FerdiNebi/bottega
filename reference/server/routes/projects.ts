@@ -145,6 +145,9 @@ router.put(
       if (body.subprojectPath !== undefined) {
         updates.subproject_path = body.subprojectPath?.trim() || null;
       }
+      if (body.ciMode !== undefined) {
+        updates.ci_mode = body.ciMode;
+      }
 
       const project = updateProject(projectId, userId, updates);
       if (!project) {

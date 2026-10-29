@@ -82,6 +82,7 @@ Opinionated features. Each is independent; implement what you want.
 | [`extra/kanban-board.md`](./extra/kanban-board.md) | The opinionated projects/tasks board and 4-screen UI for authoring tasks. Swap for Jira/Notion/etc. |
 | [`extra/project-bootstrap.md`](./extra/project-bootstrap.md) | Guided sessions that interview you into a `PRD.md` and an `ARD.md`, then turn them into dependency-leveled tasks. Another task source, like the board. |
 | [`extra/autopilot.md`](./extra/autopilot.md) | One checkbox: run a project's tasks in dependency order through the whole pipeline, with no questions, auto-merging each when the tests pass. |
+| [`extra/local-ci.md`](./extra/local-ci.md) | A per-project switch: the PR agent runs the project's CI steps locally instead of waiting on hosted CI, so hosted CI runs only on the default branch after the merge. |
 | [`extra/refinement-agent.md`](./extra/refinement-agent.md) | An extra agent that polishes the work between review and PR. |
 | [`extra/learnings-agent.md`](./extra/learnings-agent.md) | A last pass before the PR that records what the task changed and taught into a Bottega-managed section of the project's `CLAUDE.md`, so later tasks start with it. |
 | [`extra/yolo-mode.md`](./extra/yolo-mode.md) | A single-agent alternative to the multi-step pipeline. |

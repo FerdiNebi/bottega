@@ -113,21 +113,37 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     label: 'PR Agent',
     kind: 'prompt',
     file: 'pr.md',
-    variables: ['taskDocPath', 'taskId', 'prContextLine', 'prCreateOrVerifyBlock', 'baseBranch'],
+    variables: ['taskDocPath', 'taskId', 'prContextLine', 'prCreateOrVerifyBlock', 'ciCheckBlock', 'baseBranch'],
   },
   {
     name: 'yolo',
     label: 'YOLO Agent',
     kind: 'prompt',
     file: 'yolo.md',
-    variables: ['taskDocPath', 'taskId', 'prContextLine', 'prCreateOrVerifyBlock', 'baseBranch'],
+    variables: ['taskDocPath', 'taskId', 'prContextLine', 'prCreateOrVerifyBlock', 'ciCheckBlock', 'baseBranch'],
   },
   {
     name: 'pr-feedback',
     label: 'PR Feedback Response',
     kind: 'prompt',
     file: 'pr-feedback.md',
-    variables: ['taskDocPath', 'taskId', 'prUrl', 'feedbackSection', 'baseBranch'],
+    variables: ['taskDocPath', 'taskId', 'prUrl', 'feedbackSection', 'ciCheckBlock', 'baseBranch'],
+  },
+  // The CI step inlined as {{ciCheckBlock}} into pr, yolo and pr-feedback,
+  // picked by the project's ci_mode (extra/local-ci.md).
+  {
+    name: 'ci-github',
+    label: 'CI Step: GitHub',
+    kind: 'prompt',
+    file: 'ci-github.md',
+    variables: [],
+  },
+  {
+    name: 'ci-local',
+    label: 'CI Step: Local',
+    kind: 'prompt',
+    file: 'ci-local.md',
+    variables: ['taskDocPath', 'baseBranch'],
   },
   // Project bootstrap sessions (extra/project-bootstrap.md). Rendered as the
   // first user message of a manual chat, so they survive every resumed turn.

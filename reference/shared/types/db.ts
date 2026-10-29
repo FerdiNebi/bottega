@@ -64,6 +64,10 @@ export interface UserRow {
 
 // ---- projects --------------------------------------------------------------
 
+// extra/local-ci.md: 'github' waits for the PR's hosted CI; 'local' has the
+// PR agent run the CI steps in the worktree.
+export type CiMode = 'github' | 'local';
+
 export interface ProjectRow {
   id: number;
   user_id: number;
@@ -77,6 +81,8 @@ export interface ProjectRow {
   // Autopilot extra: 0/1 switch + the last start/stop message for the board.
   autopilot_enabled: number;
   autopilot_message: string | null;
+  // Local CI extra: where a PR's CI runs before the merge.
+  ci_mode: CiMode;
   created_at: string;
   updated_at: string;
 }
