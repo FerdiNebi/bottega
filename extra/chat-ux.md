@@ -125,10 +125,17 @@ harness** — it always uses OpenAI, regardless of which provider runs the turn.
   `transcribeAudio(buffer)`
   ([`reference/server/services/transcription.ts`](../reference/server/services/transcription.ts)):
   remux the `.webm` to mp3 with ffmpeg, transcribe with OpenAI
-  **`gpt-4o-transcribe`**, then run a second `gpt-4o-mini` pass that *cleans up*
+  **`gpt-transcribe`**, then run a second `gpt-4o-mini` pass that *cleans up*
   the transcript (fixes filler words, never answers the question — the system
   prompt is emphatic about transcribe-don't-respond). Requires `OPENAI_API_KEY`;
   throws a clear error if it's unset.
+- **Output is always English.** Transcription models can drift into another
+  language (an accent or a short clip makes them "hear" e.g. Russian and write
+  the transcript in it), so pin the language at both stages: send
+  `gpt-transcribe` the expected-language hint `languages: ['en']` plus a
+  free-form `prompt` describing an English dictation about software work, and
+  tell the cleanup pass to output English only and translate anything that
+  arrived in another language.
 - **Frontend:** `MicButton` records via `MediaRecorder`, posts the blob through
   `transcribeWithWhisper(blob)`
   ([`reference/src/utils/whisper.ts`](../reference/src/utils/whisper.ts)), and

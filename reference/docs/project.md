@@ -73,7 +73,7 @@ This directory is organized by architectural concern. Pull whichever file matche
 
 - **Frontend**: React 18, Vite, React Router, Tailwind CSS, CodeMirror.
 - **Backend**: Node.js (`tsx` for dev), Express, `ws`, `better-sqlite3`, `node-pty` (for the Claude login PTY), `bcrypt`, `jsonwebtoken`.
-- **External APIs**: Anthropic via the `@anthropic-ai/claude-agent-sdk`; OpenAI `gpt-4o-transcribe` for voice input.
+- **External APIs**: Anthropic via the `@anthropic-ai/claude-agent-sdk`; OpenAI `gpt-transcribe` for voice input.
 - **TypeScript-only.** Every source file is `.ts`/`.tsx`. `tsconfig.json` sets `allowJs: false` and a `pnpm guard-no-js` prelint hook fails CI on any new `.js`/`.jsx` outside `node_modules`/`dist`/`coverage`.
 
 ## Repository layout
