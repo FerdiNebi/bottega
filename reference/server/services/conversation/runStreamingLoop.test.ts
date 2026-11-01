@@ -87,7 +87,10 @@ describe('runStreamingLoop', () => {
     });
 
     expect(thinkingAcc.patchAssistantMessage).toHaveBeenCalledWith(assistant);
-    expect(contextUsageTracker.onAssistant).toHaveBeenCalledWith(queryInstance, null, null);
+    expect(contextUsageTracker.onAssistant).toHaveBeenCalledWith(queryInstance, null, null, {
+      input_tokens: 10,
+      output_tokens: 5,
+    });
     // Dual-emit (Phase 5): legacy claude-response + provider-tagged ai-response.
     expect(broadcastFn).toHaveBeenCalledWith(1, { type: 'claude-response', data: assistant });
     expect(broadcastFn).toHaveBeenCalledWith(1, {
@@ -97,7 +100,7 @@ describe('runStreamingLoop', () => {
     });
   });
 
-  it('forwards parent_tool_use_id and master model to the context usage tracker', async () => {
+  it('forwards parent_tool_use_id, master model and usage to the context usage tracker', async () => {
     // Resolved (versioned) Claude model IDs surfaced by the SDK on each
     // assistant event. Bumping these for a new model rev only requires
     // touching this one place.
@@ -126,8 +129,9 @@ describe('runStreamingLoop', () => {
       initialSessionId: 'sess',
     });
 
-    expect(contextUsageTracker.onAssistant).toHaveBeenNthCalledWith(1, queryInstance, null, MASTER_MODEL);
-    expect(contextUsageTracker.onAssistant).toHaveBeenNthCalledWith(2, queryInstance, 'tool-use-abc', SUB_AGENT_MODEL);
+    const usage = { input_tokens: 1, output_tokens: 1 };
+    expect(contextUsageTracker.onAssistant).toHaveBeenNthCalledWith(1, queryInstance, null, MASTER_MODEL, usage);
+    expect(contextUsageTracker.onAssistant).toHaveBeenNthCalledWith(2, queryInstance, 'tool-use-abc', SUB_AGENT_MODEL, usage);
   });
 
   it('captures the first session_id and fires onSessionId exactly once', async () => {

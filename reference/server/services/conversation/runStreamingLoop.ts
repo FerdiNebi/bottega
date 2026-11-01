@@ -15,7 +15,7 @@
 // recover via askUserQuestion's tool_result path).
 
 import type { ThinkingAccumulator } from './thinkingPatcher.js';
-import type { ContextUsageTracker } from '../contextUsageTracker.js';
+import type { AssistantUsage, ContextUsageTracker } from '../contextUsageTracker.js';
 import type { BroadcastFn } from '@shared/websocket/messages';
 import { isClaudeAuthError } from './retryOn401.js';
 
@@ -140,6 +140,7 @@ export async function runStreamingLoop({
           queryInstance as unknown as Parameters<ContextUsageTracker['onAssistant']>[0],
           parentToolUseId,
           masterModel,
+          (sdkMessage.message?.usage as AssistantUsage | undefined) ?? null,
         );
       }
 
