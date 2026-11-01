@@ -14,6 +14,13 @@
  * call frequently loses the race against subprocess teardown. The baseline
  * (from `result.modelUsage`) always works; the breakdown (categories, MCP
  * tools, system prompt sections, …) is folded in when the live call wins.
+ *
+ * `result.modelUsage` is cumulative over every API call in the turn, so its
+ * token sum overstates context size by roughly the number of tool round
+ * trips (a long tool-heavy turn on a ~170k context reported ~950%). The
+ * baseline total therefore comes from the last master assistant message's
+ * `usage` — the prompt size of the most recent API call — and `modelUsage`
+ * only supplies the context window (and the total when no usage was seen).
  */
 
 import { conversationsDb } from '../database/db.js';
@@ -37,6 +44,12 @@ interface ResultMessage {
       contextWindow?: number;
     }
   >;
+}
+
+export interface AssistantUsage {
+  input_tokens?: number;
+  cache_read_input_tokens?: number;
+  cache_creation_input_tokens?: number;
 }
 
 interface ContextUsageBaseline {
@@ -68,6 +81,7 @@ export interface ContextUsageTracker {
     queryInstance: QueryInstance | null | undefined,
     parentToolUseId: string | null | undefined,
     masterModel?: string | null,
+    usage?: AssistantUsage | null,
   ): void;
   onResult(resultMessage: ResultMessage | null | undefined): Promise<void>;
 }
@@ -82,9 +96,12 @@ export function createContextUsageTracker({
   // sub-agent runs aggregate into a single key, and to fall back to a
   // correct model name if the breakdown control call drops.
   let observedMasterModel: string | null = null;
+  // Prompt size of the master's most recent API call — the real current
+  // context size, unlike the turn-cumulative `result.modelUsage`.
+  let lastMasterUsage: AssistantUsage | null = null;
 
   return {
-    onAssistant(queryInstance, parentToolUseId, masterModel) {
+    onAssistant(queryInstance, parentToolUseId, masterModel, usage) {
       // Sub-agents (spawned via the Task tool) emit assistant messages with
       // a non-null `parent_tool_use_id`. Their context window is independent
       // of the master and would clobber the popup's totals/model if we let
@@ -92,11 +109,16 @@ export function createContextUsageTracker({
       // always reflects the master agent's most recent state.
       if (parentToolUseId != null) return;
       if (masterModel) observedMasterModel = masterModel;
+      if (usage) lastMasterUsage = usage;
       pendingContextUsage = captureContextUsage(queryInstance);
     },
 
     async onResult(resultMessage) {
-      const baseline = buildBaselineFromResult(resultMessage, observedMasterModel);
+      const baseline = buildBaselineFromResult(
+        resultMessage,
+        observedMasterModel,
+        lastMasterUsage,
+      );
       let snapshot: (ContextUsageBaseline & ContextUsageBreakdown) | ContextUsageBaseline | null =
         baseline;
       const breakdown = pendingContextUsage ? await pendingContextUsage : null;
@@ -135,6 +157,7 @@ export function createContextUsageTracker({
 function buildBaselineFromResult(
   resultMessage: ResultMessage | null | undefined,
   observedMasterModel: string | null,
+  lastMasterUsage: AssistantUsage | null,
 ): ContextUsageBaseline | null {
   if (resultMessage?.type !== 'result' || !resultMessage.modelUsage) {
     return null;
@@ -149,10 +172,13 @@ function buildBaselineFromResult(
   const modelData = modelKey ? resultMessage.modelUsage[modelKey] : null;
   if (!modelData) return null;
 
-  const totalTokens =
-    (modelData.inputTokens || 0) +
-    (modelData.cacheReadInputTokens || 0) +
-    (modelData.cacheCreationInputTokens || 0);
+  const totalTokens = lastMasterUsage
+    ? (lastMasterUsage.input_tokens || 0) +
+      (lastMasterUsage.cache_read_input_tokens || 0) +
+      (lastMasterUsage.cache_creation_input_tokens || 0)
+    : (modelData.inputTokens || 0) +
+      (modelData.cacheReadInputTokens || 0) +
+      (modelData.cacheCreationInputTokens || 0);
   const maxTokens = modelData.contextWindow || 0;
   const percentage = maxTokens > 0 ? (totalTokens / maxTokens) * 100 : 0;
 

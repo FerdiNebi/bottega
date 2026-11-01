@@ -146,6 +146,45 @@ describe('contextUsageTracker', () => {
     expect(broadcastFn.mock.calls[0][1].data.model).toBe(MASTER_MODEL);
   });
 
+  it('takes the baseline total from the last master usage, not the turn-cumulative modelUsage', async () => {
+    // A tool-heavy turn: modelUsage sums every API call's prompt (~9.5M),
+    // while the last call's prompt is the real context size (~176k).
+    const result = {
+      type: 'result',
+      modelUsage: {
+        [MASTER_MODEL]: {
+          inputTokens: 500,
+          cacheReadInputTokens: 9_400_000,
+          cacheCreationInputTokens: 117_000,
+          contextWindow: 1_000_000,
+        },
+      },
+    };
+    const queryInstance = { getContextUsage: vi.fn().mockRejectedValue(new Error('Query closed')) };
+    const tracker = createContextUsageTracker({ conversationId: 7, broadcastFn });
+
+    tracker.onAssistant(queryInstance, null, MASTER_MODEL, {
+      input_tokens: 3,
+      cache_read_input_tokens: 160_000,
+      cache_creation_input_tokens: 2_000,
+    });
+    tracker.onAssistant(queryInstance, null, MASTER_MODEL, {
+      input_tokens: 6,
+      cache_read_input_tokens: 170_000,
+      cache_creation_input_tokens: 6_450,
+    });
+    // Sub-agent usage must not replace the master's.
+    tracker.onAssistant(queryInstance, 'tool-use-abc', SUB_AGENT_MODEL, {
+      input_tokens: 50_000,
+    });
+    await tracker.onResult(result);
+
+    const data = broadcastFn.mock.calls[0][1].data;
+    expect(data.totalTokens).toBe(176_456);
+    expect(data.maxTokens).toBe(1_000_000);
+    expect(data.percentage).toBeCloseTo(17.6456);
+  });
+
   it('keys into result.modelUsage by the observed master model so the sub-agent entry is ignored', async () => {
     // Two-model result: sub-agent entry is first, master entry is second.
     const result = {
