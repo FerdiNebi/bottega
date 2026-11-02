@@ -53,7 +53,7 @@ gh pr view --json mergeStateStatus,mergeable --jq '{ mergeStateStatus, mergeable
 **If mergeable is "MERGEABLE" (no conflicts):**
 Run the completion script:
 ```bash
-tsx {{scriptsDir}}/complete-pr.ts {{taskId}}
+{{tsx}} {{scriptsDir}}/complete-pr.ts {{taskId}}
 ```
 
 **If mergeable is "CONFLICTING" (has conflicts):**

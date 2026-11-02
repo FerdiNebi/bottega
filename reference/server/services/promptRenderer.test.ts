@@ -82,6 +82,10 @@ describe('promptRenderer', () => {
         .toEqual(['bogus', 'nope']);
     });
 
+    it('allows the script variables in every prompt', () => {
+      expect(findUnknownVariables('review', '{{tsx}} {{scriptsDir}}/complete-workflow.ts {{taskId}}')).toEqual([]);
+    });
+
     it('throws for unknown prompt name', () => {
       expect(() => findUnknownVariables('nonsense', '')).toThrow(/Unknown prompt/);
     });

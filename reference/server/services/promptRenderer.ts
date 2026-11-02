@@ -1,6 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -14,6 +15,20 @@ const DEFAULTS_ROOT = path.join(__dirname, '..', 'constants');
  * also works in Git Bash on Windows.
  */
 export const SCRIPTS_DIR = toPromptPath(path.join(__dirname, '..', '..', 'scripts'));
+
+/**
+ * The command that runs those scripts, available to every prompt as {{tsx}}:
+ * the Node binary the server runs on plus Bottega's own tsx. The scripts load
+ * better-sqlite3, a native module built for that Node, so a bare `tsx` breaks
+ * when the agent puts the project's Node version on PATH (an .nvmrc asking
+ * for another major version).
+ */
+export const TSX_COMMAND = `"${toPromptPath(process.execPath)}" "${toPromptPath(
+  createRequire(import.meta.url).resolve('tsx/cli'),
+)}"`;
+
+/** Variables every prompt may use on top of its own. */
+const GLOBAL_VARIABLES = ['scriptsDir', 'tsx'];
 
 /**
  * Format a filesystem path for inclusion in an agent prompt. On Windows the
@@ -152,28 +167,28 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     label: 'Project Bootstrap: PRD',
     kind: 'prompt',
     file: 'prd.md',
-    variables: ['mode', 'input', 'taskId', 'scriptsDir'],
+    variables: ['mode', 'input', 'taskId', 'scriptsDir', 'tsx'],
   },
   {
     name: 'ard',
     label: 'Project Bootstrap: ARD',
     kind: 'prompt',
     file: 'ard.md',
-    variables: ['mode', 'input', 'taskId', 'scriptsDir'],
+    variables: ['mode', 'input', 'taskId', 'scriptsDir', 'tsx'],
   },
   {
     name: 'task-breakdown',
     label: 'Project Bootstrap: Initial Tasks',
     kind: 'prompt',
     file: 'task-breakdown.md',
-    variables: ['mode', 'input', 'taskId', 'scriptsDir'],
+    variables: ['mode', 'input', 'taskId', 'scriptsDir', 'tsx'],
   },
   {
     name: 'milestone-verification',
     label: 'Milestone Verification',
     kind: 'prompt',
     file: 'milestone-verification.md',
-    variables: ['taskId', 'taskDocPath', 'scriptsDir'],
+    variables: ['taskId', 'taskDocPath', 'scriptsDir', 'tsx'],
   },
   {
     name: 'autopilot',
@@ -316,7 +331,7 @@ export function extractVariables(template: string): string[] {
 export function findUnknownVariables(name: string, content: string): string[] {
   const def = requireDef(name);
   if (def.kind === 'template') return [];
-  const allowed = new Set(def.variables);
+  const allowed = new Set([...def.variables, ...GLOBAL_VARIABLES]);
   const used = extractVariables(content);
   return used.filter((v) => !allowed.has(v));
 }
@@ -325,5 +340,5 @@ export function findUnknownVariables(name: string, content: string): string[] {
  * Convenience: load a prompt by name and render with vars.
  */
 export function renderPrompt(name: string, vars: Record<string, unknown>): string {
-  return render(loadPrompt(name), { scriptsDir: SCRIPTS_DIR, ...vars });
+  return render(loadPrompt(name), { scriptsDir: SCRIPTS_DIR, tsx: TSX_COMMAND, ...vars });
 }

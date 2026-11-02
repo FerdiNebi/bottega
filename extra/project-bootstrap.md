@@ -344,7 +344,7 @@ Task creation follows the same pattern as the completion scripts
 UI never parses agent output**.
 
 ```
-tsx {{scriptsDir}}/create-tasks.ts <sessionTaskId> <jsonPath>
+{{tsx}} {{scriptsDir}}/create-tasks.ts <sessionTaskId> <jsonPath>
 ```
 
 Input — an array validated with a schema:
@@ -520,9 +520,9 @@ with the `milestone-task.ts` script (same pattern as `create-tasks.ts`: the
 agent signals intent by running a script; the UI never parses agent output):
 
 ```
-tsx {{scriptsDir}}/milestone-task.ts create <milestoneTaskId> <jsonPath>
-tsx {{scriptsDir}}/milestone-task.ts list <milestoneTaskId>
-tsx {{scriptsDir}}/milestone-task.ts sync <milestoneTaskId>
+{{tsx}} {{scriptsDir}}/milestone-task.ts create <milestoneTaskId> <jsonPath>
+{{tsx}} {{scriptsDir}}/milestone-task.ts list <milestoneTaskId>
+{{tsx}} {{scriptsDir}}/milestone-task.ts sync <milestoneTaskId>
 ```
 
 **`create`** takes one task, `{ "title": "…", "spec": "## Goal\n…" }`. The
@@ -547,7 +547,16 @@ per change. The script:
 - appends `- <title> (task #N)` to a `## Follow-up tasks` section of the
   milestone task doc (added at the end when missing);
 - is all-or-nothing: on a failure it removes the task, worktree and doc it
-  created and leaves the milestone doc alone.
+  created and leaves the milestone doc alone;
+- exits as soon as the task exists: the worktree's `node_modules`/`.venv`
+  copy runs in a detached process, so the session gets `Created task #N`
+  within seconds instead of waiting on the copy (`create-tasks.ts` does the
+  same).
+
+`{{tsx}}` renders the Node binary the server runs on plus Bottega's own
+`tsx`. The scripts load better-sqlite3, built for that Node, so a bare `tsx`
+broke when the session had put the project's Node version (from its
+`.nvmrc`) on `PATH`.
 
 The task lands in **Pending**, ready to start: by hand from Task Detail
 (planning, or YOLO), or with autopilot's **Start** (see
