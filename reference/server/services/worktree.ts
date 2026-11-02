@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs';
+import { spawn } from 'child_process';
 import { runCommand } from './shell.js';
 import { stopProcessesInDir } from './worktreeProcesses.js';
 import { assertValidBranchName } from './validators.js';
@@ -179,7 +180,13 @@ async function symlinkEnvFiles(
 
 const DEPENDENCY_DIRS = ['node_modules', '.venv'];
 
-function copyDependenciesInBackground(srcProjectPath: string, destProjectPath: string): void {
+/**
+ * Copy node_modules/.venv into the new worktree without blocking the caller.
+ * `detached` hands the copy to a process of its own, so a CLI script can
+ * exit while the copy goes on; otherwise the pending copy keeps the script
+ * alive until it finishes.
+ */
+function copyDependenciesInBackground(srcProjectPath: string, destProjectPath: string, detached: boolean): void {
   for (const dir of DEPENDENCY_DIRS) {
     const srcDir = path.join(srcProjectPath, dir);
 
@@ -188,6 +195,13 @@ function copyDependenciesInBackground(srcProjectPath: string, destProjectPath: s
     }
 
     const destDir = path.join(destProjectPath, dir);
+
+    if (detached) {
+      const child = spawn('cp', ['-a', srcDir, destDir], { detached: true, stdio: 'ignore', windowsHide: true });
+      child.on('error', (err) => console.warn(`Failed to copy ${dir} to worktree: ${err.message}`));
+      child.unref();
+      continue;
+    }
 
     runCommand('cp', ['-a', srcDir, destDir], { timeout: 600_000 })
       .then(() => {
@@ -213,6 +227,11 @@ async function createGitignoreddirs(projectPath: string): Promise<void> {
   }
 }
 
+export interface CreateWorktreeOptions {
+  /** Let the dependency copy outlive this process (CLI scripts). */
+  detachDependencyCopy?: boolean;
+}
+
 export interface CreateWorktreeResult {
   success: boolean;
   worktreePath?: string;
@@ -231,6 +250,7 @@ export async function createWorktree(
   title: string | null | undefined,
   subprojectPath: string | null = null,
   baseRef?: string,
+  options: CreateWorktreeOptions = {},
 ): Promise<CreateWorktreeResult> {
   const sanitizedTitle = sanitizeTitle(title);
   const branch = `task/${taskId}-${sanitizedTitle}`;
@@ -275,7 +295,7 @@ export async function createWorktree(
 
     await createGitignoreddirs(projectPath);
 
-    copyDependenciesInBackground(repoPath, projectPath);
+    copyDependenciesInBackground(repoPath, projectPath, options.detachDependencyCopy ?? false);
 
     return { success: true, worktreePath, branch };
   } catch (error) {

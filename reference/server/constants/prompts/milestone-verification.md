@@ -64,8 +64,10 @@ When the human reports a problem or asks for a change:
 4. **Create it.** Write `{ "title": "…", "spec": "…" }` to a JSON file outside the repository (or delete it afterwards — never commit it) and run:
 
    ```bash
-   tsx {{scriptsDir}}/milestone-task.ts create {{taskId}} <jsonPath>
+   {{tsx}} {{scriptsDir}}/milestone-task.ts create {{taskId}} <jsonPath>
    ```
+
+   Run it exactly as written, from any directory, without changing `PATH` or the Node version: the command pins the Node and `tsx` Bottega runs on, whatever Node version the project asks for. It returns within seconds and prints `Created task #<id>` — that line means the task exists (the new worktree's dependencies keep copying in the background). Do not run it again after that line; check with `list` instead.
 
    The task is created in **Pending**, branched from this milestone's branch (so commit your guide changes first), with no dependencies, and listed under `## Follow-up tasks` in the milestone doc. If the script reports errors, fix the JSON and run it again.
 5. **Hand it over.** Tell the human the task id and title and that they can start it right away: from its Task Detail (**Run** on Planification, or on YOLO), or — when autopilot is on — by pressing **Start** on the board, which runs the ready follow-up tasks one by one through the whole pipeline, merges them, and stops at this milestone again. Then carry on with the rest of the verification.
@@ -73,14 +75,14 @@ When the human reports a problem or asks for a change:
 To see the follow-up tasks and their status at any time:
 
 ```bash
-tsx {{scriptsDir}}/milestone-task.ts list {{taskId}}
+{{tsx}} {{scriptsDir}}/milestone-task.ts list {{taskId}}
 ```
 
 ## Step 5: Re-verify merged follow-up tasks
 When the human tells you follow-up tasks are done, run `list`; for those that are `completed` (merged), bring this worktree up to date with the default branch:
 
 ```bash
-tsx {{scriptsDir}}/milestone-task.ts sync {{taskId}}
+{{tsx}} {{scriptsDir}}/milestone-task.ts sync {{taskId}}
 ```
 
 Then do what Step 2 did for the affected parts — install, build, run the tests, start the app, walk the affected scenarios — update the guide if anything changed, and ask the human to re-check those scenarios. A follow-up that did not fix the problem gets a new follow-up task with what you observed.

@@ -7,6 +7,8 @@ import {
   getPromptDefinition,
   loadDefault,
   renderPrompt,
+  SCRIPTS_DIR,
+  TSX_COMMAND,
 } from '../services/promptRenderer.js';
 
 // Default project-bootstrap templates (extra/project-bootstrap.md). These are
@@ -36,7 +38,7 @@ describe('project bootstrap prompts', () => {
       const def = getPromptDefinition(name);
       expect(def).not.toBeNull();
       expect(def!.kind).toBe('prompt');
-      expect([...def!.variables].sort()).toEqual(['input', 'mode', 'scriptsDir', 'taskId']);
+      expect([...def!.variables].sort()).toEqual(['input', 'mode', 'scriptsDir', 'taskId', 'tsx']);
     });
 
     it('uses only declared variables and renders them all', () => {
@@ -163,7 +165,7 @@ describe('project bootstrap prompts', () => {
 
   it('the task breakdown runs create-tasks.ts with the session task id', () => {
     const rendered = renderPrompt('task-breakdown', VARS);
-    expect(rendered).toMatch(/tsx \S+\/create-tasks\.ts 1234 bootstrap-tasks\.json/);
+    expect(rendered).toContain(`${TSX_COMMAND} ${SCRIPTS_DIR}/create-tasks.ts 1234 bootstrap-tasks.json`);
     expect(rendered).not.toContain('{{scriptsDir}}');
   });
 });
@@ -174,8 +176,8 @@ describe('milestone verification prompt', () => {
   it('is registered and renders exactly its declared variables', () => {
     const def = getPromptDefinition('milestone-verification');
     expect(def).not.toBeNull();
-    expect([...def!.variables].sort()).toEqual(['scriptsDir', 'taskDocPath', 'taskId']);
-    expect(extractVariables(loadDefault('milestone-verification')).sort()).toEqual(['scriptsDir', 'taskDocPath', 'taskId']);
+    expect([...def!.variables].sort()).toEqual(['scriptsDir', 'taskDocPath', 'taskId', 'tsx']);
+    expect(extractVariables(loadDefault('milestone-verification')).sort()).toEqual(['scriptsDir', 'taskDocPath', 'taskId', 'tsx']);
     const rendered = renderPrompt('milestone-verification', VARS);
     expect(rendered).not.toMatch(/\{\{\w+\}\}/);
     expect(rendered).toContain('/docs/task-77.md');
@@ -202,10 +204,16 @@ describe('milestone verification prompt', () => {
     expect(content).toMatch(/every change the human asks for becomes a follow-up task/);
     expect(content).toMatch(/Only the human decides that a follow-up task is created/);
     const rendered = renderPrompt('milestone-verification', VARS);
-    expect(rendered).toMatch(/tsx \S+\/milestone-task\.ts create 77 <jsonPath>/);
-    expect(rendered).toMatch(/tsx \S+\/milestone-task\.ts list 77/);
-    expect(rendered).toMatch(/tsx \S+\/milestone-task\.ts sync 77/);
+    expect(rendered).toContain(`${TSX_COMMAND} ${SCRIPTS_DIR}/milestone-task.ts create 77 <jsonPath>`);
+    expect(rendered).toContain(`${TSX_COMMAND} ${SCRIPTS_DIR}/milestone-task.ts list 77`);
+    expect(rendered).toContain(`${TSX_COMMAND} ${SCRIPTS_DIR}/milestone-task.ts sync 77`);
     expect(rendered).not.toContain('{{scriptsDir}}');
+  });
+
+  it('runs the script as given and treats "Created task" as done', () => {
+    const content = loadDefault('milestone-verification');
+    expect(content).toMatch(/without changing `PATH` or the Node version/);
+    expect(content).toContain('`Created task #<id>`');
   });
 
   it('closes only when no follow-up task is open', () => {

@@ -103,7 +103,7 @@ Then ask for confirmation with two options: `Create these N tasks` / `Adjust`. U
 2. Run:
 
    ```
-   tsx {{scriptsDir}}/create-tasks.ts {{taskId}} bootstrap-tasks.json
+   {{tsx}} {{scriptsDir}}/create-tasks.ts {{taskId}} bootstrap-tasks.json
    ```
 
 3. If the script reports validation errors, nothing was created: fix every reported problem in the JSON and run it again.

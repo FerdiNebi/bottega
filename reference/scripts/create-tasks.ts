@@ -60,7 +60,10 @@ async function createTasks(argv: string[]): Promise<void> {
     createTask: (projectId, title, userId) => tasksDb.create(projectId, title, false, userId),
     deleteTask: (id) => tasksDb.delete(id),
     markTaskCompleted: (id) => tasksDb.update(id, { status: 'completed' }),
-    createWorktree,
+    // Detached, so the script exits as soon as the task exists instead of
+    // waiting for node_modules to finish copying.
+    createWorktree: (repoPath, taskId, title, subprojectPath, baseRef) =>
+      createWorktree(repoPath, taskId, title, subprojectPath, baseRef, { detachDependencyCopy: true }),
     removeWorktree,
     writeTaskDoc,
     deleteTaskArchive,

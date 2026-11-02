@@ -75,7 +75,10 @@ async function create(milestoneTaskId: number, jsonPath: string): Promise<void> 
     resolveBaseRef: async (repoPath) => (await resolveBootstrapBase(repoPath)).baseRef,
     createTask: (projectId, title, userId) => tasksDb.create(projectId, title, false, userId),
     deleteTask: (id) => tasksDb.delete(id),
-    createWorktree,
+    // Detached, so the script exits as soon as the task exists instead of
+    // waiting for node_modules to finish copying.
+    createWorktree: (repoPath, taskId, title, subprojectPath, baseRef) =>
+      createWorktree(repoPath, taskId, title, subprojectPath, baseRef, { detachDependencyCopy: true }),
     removeWorktree,
     readTaskDoc,
     writeTaskDoc,

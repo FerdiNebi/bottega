@@ -12,6 +12,7 @@ import {
   renderPrompt,
   resolvePromptPath,
   SCRIPTS_DIR,
+  TSX_COMMAND,
   toPromptPath,
 } from '../services/promptRenderer.js';
 
@@ -75,7 +76,7 @@ Create a PR for this task:
 4. Verify there are commits ahead of the base branch: \`git log origin/${baseBranch}..HEAD --oneline\`
    - **If no commits ahead** (and no uncommitted changes were found in step 1): there is nothing to submit. Run the completion script and stop:
    \`\`\`bash
-   tsx ${SCRIPTS_DIR}/complete-pr.ts ${taskId}
+   ${TSX_COMMAND} ${SCRIPTS_DIR}/complete-pr.ts ${taskId}
    \`\`\`
 5. Push to origin. \`--force-with-lease\` because the rebase may have rewritten commits an earlier run already pushed: \`git push --force-with-lease -u origin $(git branch --show-current)\`
 6. Create PR with a short specific title and concise summary body. Replace the placeholders with the actual task title and implementation summary:

@@ -193,7 +193,7 @@ Update the task documentation file at `{{taskDocPath}}`:
 1. **REPLACE** the "Review Findings" section with `**Status:** READY`, the `**Reviewed commit:**` and `**Full suite:**` lines, and a short summary of what you verified
 2. **Run the completion command** to signal the workflow is complete:
 ```bash
-tsx {{scriptsDir}}/complete-workflow.ts {{taskId}}
+{{tsx}} {{scriptsDir}}/complete-workflow.ts {{taskId}}
 ```
 This stops the automated agent loop and awaits final user review.
 
@@ -201,7 +201,7 @@ This stops the automated agent loop and awaits final user review.
 1. **Update the "Review Findings" section** explaining what is blocking progress and what user action is needed, with the `**Reviewed commit:**` and `**Full suite:**` lines
 2. **Run the block command** to pause the workflow:
 ```bash
-tsx {{scriptsDir}}/block-workflow.ts {{taskId}}
+{{tsx}} {{scriptsDir}}/block-workflow.ts {{taskId}}
 ```
 This stops the automated agent loop until the user resumes it after providing the needed input.
 
