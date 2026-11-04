@@ -15,6 +15,9 @@ vi.mock('../../database/db.js', () => ({
   },
   userDb: {
     getUserById: vi.fn()
+  },
+  testSlotsDb: {
+    release: vi.fn().mockReturnValue(false)
   }
 }));
 
@@ -47,7 +50,7 @@ import {
   buildAgentRunCompletionHandler,
   MAX_WORKFLOW_RUNS
 } from './agentRunLifecycle.js';
-import { tasksDb, agentRunsDb, userDb } from '../../database/db.js';
+import { tasksDb, agentRunsDb, userDb, testSlotsDb } from '../../database/db.js';
 import { worktreeExists } from '../worktree.js';
 import { notifyClaudeComplete } from '../notifications.js';
 import { startAgentRun, getRunningAgentForTask } from '../agentRunner.js';
@@ -130,6 +133,17 @@ describe('buildAgentRunCompletionHandler', () => {
     expect(agentRunsDb.updateStatus).not.toHaveBeenCalled();
     vi.advanceTimersByTime(2000);
     expect(startAgentRun).not.toHaveBeenCalled();
+  });
+
+  it("releases the task's test slot however the run ended", async () => {
+    vi.mocked(agentRunsDb.getByTask).mockReturnValue([
+      { id: 9, conversation_id: 100, agent_type: 'review', status: 'failed' }
+    ] as never);
+    vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, workflow_run_count: 0 } as never);
+
+    await buildAgentRunCompletionHandler(ctx())();
+
+    expect(testSlotsDb.release).toHaveBeenCalledWith(7);
   });
 
   it('does not chain after a PR agent (terminal)', async () => {
@@ -436,6 +450,15 @@ describe('autopilot hooks (extra/autopilot.md)', () => {
     await buildAgentRunCompletionHandler(ctx())();
 
     expect(onAutopilotLoopStopped).toHaveBeenCalledWith(7, 'the implementation run was stopped.');
+  });
+
+  it('leaves the autopilot message alone when the run paused on the usage limit', async () => {
+    runs('implementation', 'failed');
+    vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, project_id: 3, usage_limit_resume_at: '2026-11-03T19:22:00.000Z' } as never);
+
+    await buildAgentRunCompletionHandler(ctx())();
+
+    expect(onAutopilotLoopStopped).not.toHaveBeenCalled();
   });
 
   it('finishes instead of stopping when the stopped PR run had already completed the PR', async () => {

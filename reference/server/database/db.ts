@@ -246,6 +246,14 @@ const runMigrations = (): void => {
       db.exec('ALTER TABLE tasks ADD COLUMN yolo_mode INTEGER DEFAULT 0 NOT NULL');
     }
 
+    if (!taskColumnNames.includes('usage_limit_resume_at')) {
+      console.log('Running migration: Adding usage-limit pause columns to tasks');
+      db.exec(`
+        ALTER TABLE tasks ADD COLUMN usage_limit_resume_at TEXT DEFAULT NULL;
+        ALTER TABLE tasks ADD COLUMN usage_limit_agent_type TEXT DEFAULT NULL;
+      `);
+    }
+
     try {
       db.prepare('SELECT 1 FROM task_agent_runs LIMIT 1').get();
     } catch (e) {
@@ -535,6 +543,11 @@ const runMigrations = (): void => {
     if (!projectColumnNames.includes('ci_mode')) {
       console.log('Running migration: Adding ci_mode column to projects (local CI extra)');
       db.exec("ALTER TABLE projects ADD COLUMN ci_mode TEXT DEFAULT 'github' NOT NULL");
+    }
+
+    if (!projectColumnNames.includes('test_slots')) {
+      console.log('Running migration: Adding test_slots column to projects');
+      db.exec('ALTER TABLE projects ADD COLUMN test_slots INTEGER DEFAULT 2 NOT NULL');
     }
 
     if (!columnNames.includes('is_admin')) {
@@ -914,6 +927,7 @@ export interface ProjectUpdates {
   repo_folder_path?: string;
   subproject_path?: string | null;
   ci_mode?: CiMode;
+  test_slots?: number;
 }
 
 export interface WebServerConfig {
@@ -994,6 +1008,7 @@ const projectsDb = {
       'repo_folder_path',
       'subproject_path',
       'ci_mode',
+      'test_slots',
     ];
     const setClause: string[] = [];
     const values: unknown[] = [];
@@ -1285,6 +1300,39 @@ const tasksDb = {
        WHERE id = ?`
     ).run(id);
     return tasksDb.getById(id);
+  },
+
+  decrementRunCount: (id: number): TaskRow | undefined => {
+    db.prepare(
+      `UPDATE tasks
+       SET workflow_run_count = MAX(workflow_run_count - 1, 0), updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    ).run(id);
+    return tasksDb.getById(id);
+  },
+
+  // Parallel-runs extra: pause the task until `resumeAt`, then run `agentType` again.
+  setUsageLimitPause: (id: number, resumeAt: string, agentType: AgentType): TaskRow | undefined => {
+    db.prepare(
+      `UPDATE tasks
+       SET usage_limit_resume_at = ?, usage_limit_agent_type = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    ).run(resumeAt, agentType, id);
+    return tasksDb.getById(id);
+  },
+
+  clearUsageLimitPause: (id: number): void => {
+    db.prepare(
+      `UPDATE tasks
+       SET usage_limit_resume_at = NULL, usage_limit_agent_type = NULL
+       WHERE id = ? AND usage_limit_resume_at IS NOT NULL`
+    ).run(id);
+  },
+
+  getUsageLimitPaused: (): TaskRow[] => {
+    return db
+      .prepare('SELECT * FROM tasks WHERE usage_limit_resume_at IS NOT NULL')
+      .all() as TaskRow[];
   },
 
   resetRunCount: (id: number): TaskRow | undefined => {
@@ -1597,6 +1645,76 @@ const agentRunsDb = {
 };
 
 // ---------------------------------------------------------------------------
+// testSlotsDb (parallel-runs extra)
+// ---------------------------------------------------------------------------
+
+export type TestSlotAcquireResult =
+  | { acquired: true; renewed: boolean }
+  | { acquired: false; holders: number[] };
+
+const testSlotsDb = {
+  /**
+   * Take (or renew) a test slot for `taskId` in one write transaction, so two
+   * agents can never both get the last slot. Leases older than `staleBefore`
+   * (epoch ms), and leases of other tasks with no running agent run, are
+   * dropped first.
+   */
+  acquire: (
+    projectId: number,
+    taskId: number,
+    slots: number,
+    now: number,
+    staleBefore: number,
+  ): TestSlotAcquireResult => {
+    const run = db.transaction((): TestSlotAcquireResult => {
+      db.prepare('DELETE FROM test_slot_leases WHERE acquired_at < ?').run(staleBefore);
+      db.prepare(
+        `DELETE FROM test_slot_leases
+         WHERE task_id != ?
+           AND task_id NOT IN (SELECT task_id FROM task_agent_runs WHERE status = 'running')`
+      ).run(taskId);
+
+      const own = db.prepare('SELECT task_id FROM test_slot_leases WHERE task_id = ?').get(taskId);
+      if (own) {
+        db.prepare('UPDATE test_slot_leases SET acquired_at = ?, project_id = ? WHERE task_id = ?').run(
+          now,
+          projectId,
+          taskId,
+        );
+        return { acquired: true, renewed: true };
+      }
+
+      const holders = (
+        db
+          .prepare('SELECT task_id FROM test_slot_leases WHERE project_id = ? ORDER BY acquired_at')
+          .all(projectId) as { task_id: number }[]
+      ).map((r) => r.task_id);
+      if (holders.length >= slots) {
+        return { acquired: false, holders };
+      }
+
+      db.prepare('INSERT INTO test_slot_leases (task_id, project_id, acquired_at) VALUES (?, ?, ?)').run(
+        taskId,
+        projectId,
+        now,
+      );
+      return { acquired: true, renewed: false };
+    });
+    return run.immediate();
+  },
+
+  /** Free the task's slot. Returns whether it held one. */
+  release: (taskId: number): boolean => {
+    return db.prepare('DELETE FROM test_slot_leases WHERE task_id = ?').run(taskId).changes > 0;
+  },
+
+  /** Drop every lease (server startup: no agent run survives a restart). */
+  releaseAll: (): number => {
+    return db.prepare('DELETE FROM test_slot_leases').run().changes;
+  },
+};
+
+// ---------------------------------------------------------------------------
 // appSettingsDb
 // ---------------------------------------------------------------------------
 
@@ -1678,6 +1796,7 @@ export {
   tasksDb,
   conversationsDb,
   agentRunsDb,
+  testSlotsDb,
   appSettingsDb,
   userAgentModelSettingsDb,
 };

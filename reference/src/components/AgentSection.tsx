@@ -6,7 +6,7 @@
  */
 
 import React, { useState, type ComponentType } from 'react';
-import { Play, Check, Loader2, FileText, Code, CheckCircle, MessageCircle, AlertCircle, GitPullRequest, Sparkles, Zap, BookOpen } from 'lucide-react';
+import { Play, Check, Loader2, FileText, Code, CheckCircle, MessageCircle, AlertCircle, GitPullRequest, Sparkles, Zap, BookOpen, PauseCircle } from 'lucide-react';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
 import type { AgentRunRow, AgentType } from '../../shared/types/db';
@@ -73,7 +73,15 @@ interface AgentSectionProps {
   onRunAgent: (agentType: AgentType) => void | Promise<void>;
   onResumeAgent?: ((conversationId: number) => void) | undefined;
   yoloMode?: boolean | undefined;
+  /** Parallel-runs extra: when set, the task waits out a usage limit until then. */
+  usageLimitResumeAt?: string | null | undefined;
   className?: string | undefined;
+}
+
+function formatResumeTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 function AgentSection({
@@ -82,6 +90,7 @@ function AgentSection({
   onRunAgent,
   onResumeAgent,
   yoloMode = false,
+  usageLimitResumeAt = null,
   className
 }: AgentSectionProps) {
   const visibleAgents = AGENT_TYPES.filter(a =>
@@ -140,6 +149,15 @@ function AgentSection({
   return (
     <div className={cn('p-4 border-t border-border min-w-0', className)}>
       <h3 className="text-sm font-medium text-foreground mb-3">Agents</h3>
+      {usageLimitResumeAt && (
+        <div
+          className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
+          data-testid="usage-limit-notice"
+        >
+          <PauseCircle className="w-4 h-4 flex-shrink-0" />
+          Paused: usage limit, resumes at {formatResumeTime(usageLimitResumeAt)}
+        </div>
+      )}
       <div className="space-y-2">
         {visibleAgents.map((agent) => {
           const status = getAgentStatus(agent.type);

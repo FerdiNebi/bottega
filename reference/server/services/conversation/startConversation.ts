@@ -33,6 +33,8 @@ import {
 } from './streamingLifecycle.js';
 import { buildAgentRunCompletionHandler } from './agentRunLifecycle.js';
 import { runStreamingLoop } from './runStreamingLoop.js';
+import { pauseRunForUsageLimit } from '../usageLimitPause.js';
+import { buildTaskEnv } from '../taskResources.js';
 import { isClaudeAuthError, delay, AUTH_RETRY_BACKOFF_MS } from './retryOn401.js';
 import { startCodexConversation, sendCodexMessage } from './startCodexConversation.js';
 import {
@@ -107,7 +109,7 @@ export async function startConversation(
     projectPath = getWorktreeProjectPath(projectPath, taskId, taskWithProject.subproject_path);
   }
 
-  const claudeEnv = buildClaudeSdkEnv(userId);
+  const claudeEnv = { ...buildClaudeSdkEnv(userId), ...buildTaskEnv(taskId, taskWithProject.project_id) };
 
   let conversationId = options.conversationId;
   if (!conversationId) {
@@ -271,7 +273,7 @@ export async function startConversation(
 
     void (async () => {
       try {
-        const { authError } = await runStreamingLoop({
+        const { authError, usageLimit } = await runStreamingLoop({
           queryInstance: queryInstance as never,
           conversationId: conversationId,
           broadcastFn,
@@ -316,6 +318,12 @@ export async function startConversation(
             exitCode: 0,
             isNewSession: true,
           });
+        }
+
+        // Usage limit: pause the agent run (marked failed, so the completion
+        // handler below doesn't chain) and resume after the reset.
+        if (usageLimit) {
+          pauseRunForUsageLimit(ctx, usageLimit);
         }
 
         await composeOnComplete(ctx)();
@@ -465,7 +473,7 @@ export async function sendMessage(
   }
 
   const abortController = new AbortController();
-  const claudeEnv = buildClaudeSdkEnv(userId);
+  const claudeEnv = { ...buildClaudeSdkEnv(userId), ...buildTaskEnv(taskId, projectId) };
 
   // Resume reads transcripts from sqliteSessionStore.load() — no per-user
   // CLAUDE_CONFIG_DIR materialization required.
@@ -576,7 +584,7 @@ export async function sendMessage(
   const contextUsageTracker = createContextUsageTracker({ conversationId, broadcastFn });
 
   try {
-    const { authError } = await runStreamingLoop({
+    const { authError, usageLimit } = await runStreamingLoop({
       queryInstance: queryInstance as never,
       conversationId,
       broadcastFn,
@@ -608,6 +616,11 @@ export async function sendMessage(
         exitCode: 0,
         isNewSession: false,
       });
+    }
+
+    // Usage limit: see the matching comment in startConversation.
+    if (usageLimit) {
+      pauseRunForUsageLimit(ctx, usageLimit);
     }
 
     await composeOnComplete(ctx)();

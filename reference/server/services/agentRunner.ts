@@ -8,8 +8,10 @@
  * by the ConversationAdapter when streaming completes.
  */
 
-import { tasksDb, agentRunsDb, conversationsDb, userDb } from '../database/db.js';
+import { tasksDb, agentRunsDb, conversationsDb, userDb, projectsDb } from '../database/db.js';
 import { isAutopilotProject } from './autopilotFlag.js';
+import { cancelUsageLimitPause } from './usageLimitPause.js';
+import { taskPortRange } from './taskResources.js';
 import { startConversation } from './conversationAdapter.js';
 import { updateUserBadge } from './notifications.js';
 import { buildContextPrompt, getTaskDocPath, getRecordingPath } from './documentation.js';
@@ -159,6 +161,20 @@ export async function startAgentRun(
     message = `${message}\n\n${renderPrompt('autopilot', { taskDocPath })}`;
   }
 
+  // Parallel-runs extra: own ports, own test databases, and test slots for
+  // heavy suites, so tasks running side by side don't break each other's
+  // tests (extra/parallel-runs.md). Planning and learnings run no tests.
+  if (agentType !== 'planification' && agentType !== 'learnings') {
+    const ports = taskPortRange(taskId);
+    const project = projectsDb.getByIdAdmin(taskWithProject.project_id);
+    message = `${message}\n\n${renderPrompt('parallel-runs', {
+      taskId,
+      portBase: ports.base,
+      portEnd: ports.end,
+      testSlots: project?.test_slots ?? 2,
+    })}`;
+  }
+
   // Resolve THIS USER's configured provider for this agent up-front so we can
   // (a) validate the right backend's credentials before we start
   // touching task state and (b) stamp the right provider on the new
@@ -200,6 +216,10 @@ export async function startAgentRun(
       worktreePath: effectivePath,
     };
   }
+
+  // A run started now (by hand, or by the resume itself) supersedes a pending
+  // usage-limit resume (extra/parallel-runs.md §1).
+  cancelUsageLimitPause(taskId);
 
   // Increment workflow run count (for infinite loop prevention)
   tasksDb.incrementRunCount(taskId);

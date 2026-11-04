@@ -83,6 +83,8 @@ export interface ProjectRow {
   autopilot_message: string | null;
   // Local CI extra: where a PR's CI runs before the merge.
   ci_mode: CiMode;
+  // Parallel-runs extra: how many tasks may run heavy test suites at once.
+  test_slots: number;
   created_at: string;
   updated_at: string;
 }
@@ -112,6 +114,9 @@ export interface TaskRow {
   refinement_complete: SqliteBoolean;
   learnings_complete: SqliteBoolean;
   yolo_mode: SqliteBoolean;
+  // Parallel-runs extra: set while the task waits out a provider usage limit.
+  usage_limit_resume_at: string | null;
+  usage_limit_agent_type: AgentType | null;
   completed_at: string | null;
   created_at: string;
   updated_at: string;

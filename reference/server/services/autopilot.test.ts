@@ -103,6 +103,8 @@ function task(id: number, overrides: Partial<TaskRow> = {}): TaskRow {
     refinement_complete: 0,
     learnings_complete: 0,
     yolo_mode: 0,
+    usage_limit_resume_at: null,
+    usage_limit_agent_type: null,
     completed_at: null,
     created_at: '',
     updated_at: '',
@@ -145,6 +147,7 @@ beforeEach(() => {
     autopilot_enabled: 1,
     autopilot_message: null,
     ci_mode: 'github',
+    test_slots: 2,
     created_at: '',
     updated_at: '',
   };

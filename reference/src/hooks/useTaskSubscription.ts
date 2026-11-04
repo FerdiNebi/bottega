@@ -5,6 +5,8 @@
  * When subscribed, the hook receives and processes:
  * - conversation-added: New conversations created for the task
  * - agent-run-updated: Agent run status changes
+ * - task-usage-limit: the task paused on (or resumed from) a usage limit,
+ *   passed to `onUsageLimit`
  *
  * Updates the TaskContext state directly to provide live updates
  * on the Task Detail page without requiring manual refresh.
@@ -13,6 +15,7 @@
 import { useEffect, useRef } from 'react';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { useTaskContext, type Conversation, type AgentRun } from '../contexts/TaskContext';
+import type { AgentType } from '../../shared/types/db';
 import type {
   ServerMessageOf,
   TaskId,
@@ -25,10 +28,14 @@ import type {
  */
 export function useTaskSubscription(
   taskId: TaskId | null | undefined,
+  onUsageLimit?: (resumeAt: string | null, agentType: AgentType | null) => void,
 ): void {
   const { isConnected, subscribe, unsubscribe, sendMessage } = useWebSocket();
   const { setConversations, setAgentRuns } = useTaskContext();
   const subscribedTaskRef = useRef<TaskId | null>(null);
+  // Latest callback without re-subscribing on every render.
+  const onUsageLimitRef = useRef(onUsageLimit);
+  onUsageLimitRef.current = onUsageLimit;
 
   useEffect(() => {
     if (!isConnected || !taskId) return;
@@ -98,7 +105,13 @@ export function useTaskSubscription(
       );
     };
 
+    const handleUsageLimit = (msg: ServerMessageOf<'task-usage-limit'>) => {
+      if (msg.taskId !== taskId) return;
+      onUsageLimitRef.current?.(msg.resumeAt, msg.agentType);
+    };
+
     subscribe('conversation-added', handleConversationAdded);
+    subscribe('task-usage-limit', handleUsageLimit);
     subscribe('agent-run-updated', handleAgentRunUpdated);
     subscribe('conversation-name-updated', handleConversationNameUpdated);
 
@@ -106,6 +119,7 @@ export function useTaskSubscription(
       sendMessage('unsubscribe-task', { taskId });
       subscribedTaskRef.current = null;
       unsubscribe('conversation-added', handleConversationAdded);
+      unsubscribe('task-usage-limit', handleUsageLimit);
       unsubscribe('agent-run-updated', handleAgentRunUpdated);
       unsubscribe(
         'conversation-name-updated',

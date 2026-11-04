@@ -32,6 +32,7 @@ export interface UpdateProjectRequest {
   repoFolderPath?: string | undefined;
   subprojectPath?: string | undefined;
   ciMode?: CiMode | undefined;
+  testSlots?: number | undefined;
 }
 
 export type UpdateProjectResponse = ProjectRow;

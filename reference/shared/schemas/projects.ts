@@ -22,6 +22,8 @@ export const UpdateProjectBodySchema = z.object({
   subprojectPath: z.string().nullable().optional(),
   // extra/local-ci.md
   ciMode: z.enum(['github', 'local']).optional(),
+  // Parallel-runs extra: concurrent heavy test suites allowed per project.
+  testSlots: z.number().int().min(1).max(32).optional(),
 });
 export type UpdateProjectBody = z.infer<typeof UpdateProjectBodySchema>;
 

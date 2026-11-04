@@ -494,3 +494,59 @@ describe('runStreamingLoop', () => {
     });
   });
 });
+
+describe('runStreamingLoop usage limit', () => {
+  const limitMessage = {
+    type: 'assistant',
+    session_id: 'sess',
+    error: 'rate_limit',
+    message: { id: 'msg-limit', content: [{ type: 'text', text: "You've hit your session limit · resets 9:20pm" }] }
+  };
+
+  function run(messages: unknown[]) {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    return runStreamingLoop({
+      queryInstance: asyncIterableOf(messages) as never,
+      conversationId: 1,
+      broadcastFn: broadcastFn as never,
+      thinkingAcc: thinkingAcc as never,
+      contextUsageTracker: contextUsageTracker as never,
+      initialSessionId: 'sess'
+    });
+  }
+
+  it('reports no usage limit for an ordinary turn', async () => {
+    const { usageLimit } = await run([{ type: 'result', is_error: false, session_id: 'sess' }]);
+    expect(usageLimit).toBeNull();
+  });
+
+  it('reports the usage limit and still broadcasts the message', async () => {
+    const { usageLimit } = await run([limitMessage, { type: 'result', is_error: true, session_id: 'sess' }]);
+    expect(usageLimit).toEqual({ resetsAt: null });
+    expect(broadcastFn).toHaveBeenCalledWith(1, expect.objectContaining({ type: 'claude-response', data: limitMessage }));
+  });
+
+  it('takes the reset time from a rejected rate_limit_event, in ms', async () => {
+    const { usageLimit } = await run([
+      { type: 'rate_limit_event', session_id: 'sess', rate_limit_info: { status: 'rejected', resetsAt: 1_800_000_000 } },
+      limitMessage
+    ]);
+    expect(usageLimit).toEqual({ resetsAt: 1_800_000_000_000 });
+  });
+
+  it('picks up a reset time that arrives after the limit message', async () => {
+    const { usageLimit } = await run([
+      limitMessage,
+      { type: 'rate_limit_event', session_id: 'sess', rate_limit_info: { status: 'rejected', resetsAt: 1_800_000_000 } }
+    ]);
+    expect(usageLimit).toEqual({ resetsAt: 1_800_000_000_000 });
+  });
+
+  it('ignores rate_limit_events that did not reject', async () => {
+    const { usageLimit } = await run([
+      { type: 'rate_limit_event', session_id: 'sess', rate_limit_info: { status: 'allowed_warning', resetsAt: 1_800_000_000 } },
+      limitMessage
+    ]);
+    expect(usageLimit).toEqual({ resetsAt: null });
+  });
+});

@@ -58,7 +58,11 @@ function TaskDetailPage() {
   const [showNewConversationModal, setShowNewConversationModal] = useState(false);
 
   // Subscribe to real-time task updates via WebSocket
-  useTaskSubscription(task?.id ?? null);
+  useTaskSubscription(task?.id ?? null, (resumeAt, agentType) => {
+    setTask((prev) =>
+      prev ? { ...prev, usage_limit_resume_at: resumeAt, usage_limit_agent_type: agentType } : prev,
+    );
+  });
 
   // Load project data
   useEffect(() => {
