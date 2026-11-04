@@ -6,7 +6,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, Trash2, FolderOpen, AlertTriangle, Archive, Server } from 'lucide-react';
+import { ArrowLeft, Save, Trash2, FolderOpen, AlertTriangle, Archive, Server, Layers } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { useTaskContext } from '../contexts/TaskContext';
@@ -45,6 +45,7 @@ function ProjectEditPageWrapper() {
   const [cleanupResult, setCleanupResult] = useState<CleanupOldCompletedTasksResponse | null>(null);
 
   const [subprojectPath, setSubprojectPath] = useState('');
+  const [testSlots, setTestSlots] = useState('2');
 
   const [serveSymlinkPath, setServeSymlinkPath] = useState('');
   const [systemdServiceName, setSystemdServiceName] = useState('');
@@ -88,6 +89,7 @@ function ProjectEditPageWrapper() {
     if (project) {
       setName(project.name || '');
       setSubprojectPath(project.subproject_path || '');
+      setTestSlots(String(project.test_slots ?? 2));
       setHasChanges(false);
       setError(null);
     }
@@ -123,11 +125,12 @@ function ProjectEditPageWrapper() {
     if (!project) return;
     const nameChanged = name !== (project.name || '');
     const subprojectChanged = subprojectPath !== (project.subproject_path || '');
+    const testSlotsChanged = testSlots !== String(project.test_slots ?? 2);
     const webServerChanged = serveSymlinkPath !== initialWebServerConfig.serveSymlinkPath ||
       systemdServiceName !== initialWebServerConfig.systemdServiceName ||
       appUrl !== initialWebServerConfig.appUrl;
-    setHasChanges(nameChanged || subprojectChanged || webServerChanged);
-  }, [name, project, subprojectPath, serveSymlinkPath, systemdServiceName, appUrl, initialWebServerConfig]);
+    setHasChanges(nameChanged || subprojectChanged || testSlotsChanged || webServerChanged);
+  }, [name, project, subprojectPath, testSlots, serveSymlinkPath, systemdServiceName, appUrl, initialWebServerConfig]);
 
   // Handle save
   const handleSave = useCallback(async () => {
@@ -135,6 +138,11 @@ function ProjectEditPageWrapper() {
     if (!name.trim()) {
       setError('Project name is required');
       nameInputRef.current?.focus();
+      return;
+    }
+    const parsedTestSlots = Number(testSlots);
+    if (!Number.isInteger(parsedTestSlots) || parsedTestSlots < 1 || parsedTestSlots > 32) {
+      setError('Test slots must be a whole number from 1 to 32');
       return;
     }
 
@@ -145,6 +153,7 @@ function ProjectEditPageWrapper() {
       const result = await updateProject(project.id, {
         name: name.trim(),
         subprojectPath: subprojectPath.trim() || undefined,
+        testSlots: parsedTestSlots,
       });
 
       if (!result.success) {
@@ -177,7 +186,7 @@ function ProjectEditPageWrapper() {
     } finally {
       setIsSaving(false);
     }
-  }, [project, name, subprojectPath, serveSymlinkPath, systemdServiceName, appUrl, initialWebServerConfig, updateProject, navigate, projectId]);
+  }, [project, name, subprojectPath, testSlots, serveSymlinkPath, systemdServiceName, appUrl, initialWebServerConfig, updateProject, navigate, projectId]);
 
   // Handle delete
   const handleDelete = useCallback(async () => {
@@ -460,6 +469,39 @@ function ProjectEditPageWrapper() {
                   opens this URL in a new tab. Leave empty to skip opening a tab.
                 </p>
               </div>
+            </div>
+          </div>
+
+          {/* Parallel runs (extra/parallel-runs.md) */}
+          <div className="pt-6 border-t border-border">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-muted-foreground" />
+                <h3 className="text-sm font-medium text-foreground">
+                  Parallel Runs
+                </h3>
+              </div>
+              <label
+                htmlFor="test-slots"
+                className="text-sm font-medium text-foreground"
+              >
+                Test Slots
+              </label>
+              <Input
+                id="test-slots"
+                type="number"
+                min={1}
+                max={32}
+                value={testSlots}
+                onChange={(e) => setTestSlots(e.target.value)}
+                className="w-24 text-sm"
+                data-testid="test-slots-input"
+              />
+              <p className="text-xs text-muted-foreground">
+                How many tasks of this project may run heavy test suites (full suite, E2E) at the same
+                time. Agents of other tasks wait for a free slot, so parallel runs don't slow each
+                other's tests into timeouts.
+              </p>
             </div>
           </div>
 

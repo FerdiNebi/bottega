@@ -1075,6 +1075,7 @@ Please:
               onRunAgent={onRunAgent}
               onResumeAgent={handleResumeAgent}
               yoloMode={task.yolo_mode === 1}
+              usageLimitResumeAt={task.usage_limit_resume_at}
               className="flex-shrink-0"
             />
           )}

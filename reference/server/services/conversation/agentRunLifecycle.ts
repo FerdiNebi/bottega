@@ -12,7 +12,7 @@
 // module, so a static import would create a load-time cycle. Keep it
 // dynamic.
 
-import { tasksDb, agentRunsDb, userDb } from '../../database/db.js';
+import { tasksDb, agentRunsDb, userDb, testSlotsDb } from '../../database/db.js';
 import { worktreeExists } from '../worktree.js';
 import { isAutopilotProject } from '../autopilotFlag.js';
 import { notifyClaudeComplete } from '../notifications.js';
@@ -60,6 +60,12 @@ export function buildAgentRunCompletionHandler(
 
     if (linkedAgentRun) {
       const { id: agentRunId, agent_type: agentType, status } = linkedAgentRun;
+
+      // However the run ended, its task no longer needs a test slot
+      // (extra/parallel-runs.md §2).
+      if (testSlotsDb.release(taskId)) {
+        console.log(`[ConversationAdapter] Released the test slot of task ${taskId}`);
+      }
 
       if (status === 'running') {
         endedNormally = true;
@@ -110,9 +116,12 @@ export function buildAgentRunCompletionHandler(
       // Not a normally-ended agent run: a manual chat, a follow-up message in
       // an agent's conversation, or a run the user stopped. If the PR got
       // marked complete in it, autopilot still merges and moves on.
+      // A run paused on the usage limit (usageLimitPause.ts) already set the
+      // autopilot message and will resume on its own.
       const autopilot = await import('../autopilot.js');
       const finished = await autopilot.finishIfPrCompletedOutsideRun(taskId, ctx);
-      if (!finished && linkedAgentRun?.status === 'failed') {
+      const pausedOnUsageLimit = !!tasksDb.getById(taskId)?.usage_limit_resume_at;
+      if (!finished && linkedAgentRun?.status === 'failed' && !pausedOnUsageLimit) {
         autopilot.onAutopilotLoopStopped(taskId, `the ${linkedAgentRun.agent_type} run was stopped.`);
       }
     }

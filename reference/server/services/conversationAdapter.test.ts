@@ -77,6 +77,16 @@ vi.mock('../database/db.js', () => ({
   projectsDb: {
     getByIdAdmin: vi.fn(),
   },
+  // Parallel-runs extra: the completion handler frees the task's test slot.
+  testSlotsDb: {
+    release: vi.fn().mockReturnValue(false),
+  },
+}));
+
+// Parallel-runs extra: the pause itself is unit-tested in usageLimitPause.test.ts.
+vi.mock('./usageLimitPause.js', () => ({
+  pauseRunForUsageLimit: vi.fn(),
+  cancelUsageLimitPause: vi.fn(),
 }));
 
 vi.mock('./projectService.js', () => ({
@@ -144,6 +154,7 @@ const RESOLVED_DEFAULT_MODEL = 'claude-opus-4-7';
 // Import after mocks
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { conversationsDb, tasksDb, agentRunsDb } from '../database/db.js';
+import { pauseRunForUsageLimit } from './usageLimitPause.js';
 import { notifyClaudeComplete } from './notifications.js';
 import { auditClaudeLaunch, buildClaudeSdkEnv } from './claudeCredentials.js';
 import { sqliteSessionStore } from './sqliteSessionStore.js';
@@ -1034,6 +1045,42 @@ it('should broadcast streaming-ended event when streaming completes', async () =
         1, // projectId
         expect.objectContaining({ agentType: null, workflowComplete: false })
       );
+    });
+
+    it('pauses the agent run instead of completing it when the turn hit the usage limit', async () => {
+      const mockAgentRun = { id: 5, conversation_id: 1, agent_type: 'implementation', status: 'running' };
+      vi.mocked(agentRunsDb.getByTask).mockReturnValue([mockAgentRun] as never);
+      // The real pause marks the run failed before the completion handler runs.
+      vi.mocked(pauseRunForUsageLimit).mockImplementation(() => {
+        mockAgentRun.status = 'failed';
+        return true;
+      });
+
+      const limitMessage = {
+        type: 'assistant',
+        session_id: 'session-123',
+        error: 'rate_limit',
+        message: { id: 'm1', content: [{ type: 'text', text: "You've hit your session limit" }] },
+      };
+      const mockIterator = {
+        [Symbol.asyncIterator]: () => ({
+          next: vi.fn()
+            .mockResolvedValueOnce({ value: limitMessage, done: false })
+            .mockResolvedValueOnce({ value: { type: 'result', is_error: true, modelUsage: {} }, done: false })
+            .mockResolvedValueOnce({ done: true })
+        })
+      };
+      vi.mocked(query).mockReturnValue(mockIterator as never);
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      await startConversation(1, 'Hello', { model: 'opus', conversationId: 1 });
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      expect(pauseRunForUsageLimit).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationId: 1, taskId: 1 }),
+        { resetsAt: null },
+      );
+      expect(agentRunsDb.updateStatus).not.toHaveBeenCalledWith(5, 'completed');
     });
 
     it('should update agent run status to completed when linked', async () => {

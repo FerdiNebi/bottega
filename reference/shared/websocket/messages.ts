@@ -216,6 +216,14 @@ export type ServerToClientMessage =
       taskId: TaskId;
       reason: string;
     }
+  // Parallel-runs extra: the task waits out a usage limit (resumeAt = null
+  // once the pause is over or cancelled).
+  | {
+      type: 'task-usage-limit';
+      taskId: TaskId;
+      resumeAt: string | null;
+      agentType: AgentType | null;
+    }
   // ---- Context usage ----
   //
   // `data` is intentionally `unknown` here. The server emits a hybrid shape

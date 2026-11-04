@@ -33,6 +33,7 @@ import { promises as fs } from 'fs';
 import { conversationsDb, tasksDb } from '../../database/db.js';
 import { resolveResumeModelEffort } from '../agentModelSettings.js';
 import { getWorktreeProjectPath, worktreeExists } from '../worktree.js';
+import { buildTaskEnv } from '../taskResources.js';
 import { generateConversationTitle } from '../titleGenerator.js';
 import { createContextUsageTracker } from '../contextUsageTracker.js';
 import { getCredentialStore } from '../credentials/registry.js';
@@ -232,7 +233,7 @@ export async function sendCodexMessage(
     }
   }
 
-  const codexEnv = getCredentialStore('openai').buildSdkEnv(userId);
+  const codexEnv = { ...getCredentialStore('openai').buildSdkEnv(userId), ...buildTaskEnv(taskId, projectId) };
   const promptText = message ?? '';
 
   // Resume on an explicit model+effort — re-resolved from the RESUMING user's
@@ -367,7 +368,7 @@ export async function startCodexConversation(
 
   // Per-user CODEX_HOME. Throws if the user has no provisioned auth.json,
   // matching the Claude path's fail-closed posture.
-  const codexEnv = getCredentialStore('openai').buildSdkEnv(userId);
+  const codexEnv = { ...getCredentialStore('openai').buildSdkEnv(userId), ...buildTaskEnv(taskId, taskWithProject.project_id) };
 
   let conversationId = options.conversationId;
   if (!conversationId) {

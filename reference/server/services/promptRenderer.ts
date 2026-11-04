@@ -182,6 +182,13 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     variables: ['taskDocPath'],
   },
   {
+    name: 'parallel-runs',
+    label: 'Parallel Runs Addendum',
+    kind: 'prompt',
+    file: 'parallel-runs.md',
+    variables: ['taskId', 'portBase', 'portEnd', 'testSlots', 'scriptsDir', 'tsx'],
+  },
+  {
     name: 'plan-template',
     label: 'Plan Template',
     kind: 'template',

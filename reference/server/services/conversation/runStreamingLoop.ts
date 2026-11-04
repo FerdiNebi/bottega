@@ -57,6 +57,36 @@ function isInBandAuthError(msg: SDKIteratorMessage): boolean {
   return false;
 }
 
+/**
+ * The turn ended on the subscription's usage limit: the SDK sends a synthetic
+ * `assistant` message with `error: 'rate_limit'` ("You've hit your session
+ * limit · resets …") and the iterator returns cleanly. `resetsAt` (epoch ms)
+ * comes from the latest rejected `rate_limit_event`, when one was seen.
+ */
+export interface UsageLimitHit {
+  resetsAt: number | null;
+}
+
+function isUsageLimitMessage(msg: SDKIteratorMessage): boolean {
+  if (msg.type !== 'assistant') return false;
+  return msg['error'] === 'rate_limit' || msg.message?.error === 'rate_limit';
+}
+
+/** `resetsAt` of a rejected rate_limit_event, in epoch ms; null otherwise. */
+function rejectedResetsAt(msg: SDKIteratorMessage): number | null {
+  if (msg.type !== 'rate_limit_event') return null;
+  const info = msg['rate_limit_info'] as { status?: string; resetsAt?: number } | undefined;
+  if (info?.status !== 'rejected' || typeof info.resetsAt !== 'number') return null;
+  // The SDK reports epoch seconds; accept milliseconds too.
+  return info.resetsAt < 1e12 ? info.resetsAt * 1000 : info.resetsAt;
+}
+
+export interface StreamingLoopOutcome {
+  claudeSessionId: string | null;
+  authError: boolean;
+  usageLimit: UsageLimitHit | null;
+}
+
 export interface RunStreamingLoopParams {
   queryInstance: AsyncIterable<SDKIteratorMessage>;
   conversationId: number;
@@ -92,15 +122,31 @@ export async function runStreamingLoop({
   onSessionId,
   broadcastClaudeStatus = false,
   onResult,
-}: RunStreamingLoopParams): Promise<{ claudeSessionId: string | null; authError: boolean }> {
+}: RunStreamingLoopParams): Promise<StreamingLoopOutcome> {
   let claudeSessionId: string | null = initialSessionId;
   let firstSessionIdSeen = initialSessionId !== null;
   let sessionCreatedBroadcast = false;
   let resultObserved = false;
   let authError = false;
+  let usageLimit: UsageLimitHit | null = null;
+  let limitResetsAt: number | null = null;
 
   try {
     for await (const sdkMessage of queryInstance) {
+      const resetsAt = rejectedResetsAt(sdkMessage);
+      if (resetsAt !== null) {
+        limitResetsAt = resetsAt;
+        if (usageLimit) usageLimit.resetsAt = resetsAt;
+      }
+      // Broadcast as usual (the user should see the limit message); the
+      // caller decides what the limit means for the run.
+      if (isUsageLimitMessage(sdkMessage)) {
+        usageLimit = { resetsAt: limitResetsAt };
+        console.warn(
+          `[ConversationAdapter] Usage limit hit on conversation ${conversationId} (resets ${limitResetsAt ? new Date(limitResetsAt).toISOString() : 'unknown'})`,
+        );
+      }
+
       if (sdkMessage.type === 'stream_event') {
         thinkingAcc.handleStreamEvent(sdkMessage.event as Parameters<ThinkingAccumulator['handleStreamEvent']>[0]);
         continue;
@@ -213,10 +259,10 @@ export async function runStreamingLoop({
       console.log(
         `[ConversationAdapter] iterator threw after result for session ${claudeSessionId} — treating as clean turn end (${(error as Error).message ?? error})`,
       );
-      return { claudeSessionId, authError };
+      return { claudeSessionId, authError, usageLimit };
     }
     throw error;
   }
 
-  return { claudeSessionId, authError };
+  return { claudeSessionId, authError, usageLimit };
 }

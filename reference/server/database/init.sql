@@ -75,6 +75,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     refinement_complete INTEGER DEFAULT 0 NOT NULL,
     learnings_complete INTEGER DEFAULT 0 NOT NULL,
     yolo_mode INTEGER DEFAULT 0 NOT NULL,
+    -- Parallel-runs extra: a run that hit the provider's usage limit pauses the
+    -- task until this time (ISO-8601), then the same agent type runs again.
+    usage_limit_resume_at TEXT DEFAULT NULL,
+    usage_limit_agent_type TEXT DEFAULT NULL,
     completed_at DATETIME DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -133,6 +137,19 @@ CREATE TABLE IF NOT EXISTS task_agent_runs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_task_agent_runs_task_id ON task_agent_runs(task_id);
+
+-- Parallel-runs extra: tasks currently holding one of their project's test
+-- slots (projects.test_slots). One row per task: the task owns the lease, not a
+-- process, so it can span several commands. acquired_at is epoch milliseconds.
+CREATE TABLE IF NOT EXISTS test_slot_leases (
+    task_id INTEGER PRIMARY KEY,
+    project_id INTEGER NOT NULL,
+    acquired_at INTEGER NOT NULL,
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_test_slot_leases_project_id ON test_slot_leases(project_id);
 
 -- Session storage tables (Claude Agent SDK custom sessionStore backend)
 -- The SDK calls our SqliteSessionStore.append/load/... instead of writing JSONL

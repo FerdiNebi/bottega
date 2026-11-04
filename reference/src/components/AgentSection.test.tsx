@@ -18,6 +18,7 @@ vi.mock('lucide-react', () => ({
   Sparkles: () => <span data-testid="icon-sparkles" />,
   BookOpen: () => <span data-testid="icon-book-open" />,
   Zap: () => <span data-testid="icon-zap" />,
+  PauseCircle: () => <span data-testid="icon-pause-circle" />,
 }));
 
 // Mock UI components
@@ -57,6 +58,21 @@ describe('AgentSection', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  describe('usage-limit pause', () => {
+    it('shows when the paused task resumes', () => {
+      render(<AgentSection {...defaultProps} usageLimitResumeAt="2026-11-03T19:22:00.000Z" />);
+
+      const notice = screen.getByTestId('usage-limit-notice');
+      expect(notice.textContent).toMatch(/^Paused: usage limit, resumes at \d{1,2}[:.]\d{2}/);
+    });
+
+    it('shows nothing without a pause', () => {
+      render(<AgentSection {...defaultProps} usageLimitResumeAt={null} />);
+
+      expect(screen.queryByTestId('usage-limit-notice')).toBeNull();
+    });
   });
 
   describe('Agent Types Rendering', () => {

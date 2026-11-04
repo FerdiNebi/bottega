@@ -77,6 +77,8 @@ export interface ProjectRow {
   // Autopilot extra: 0/1 switch + the last start/stop message for the board.
   autopilot_enabled: number;
   autopilot_message: string | null;
+  // Parallel-runs extra: how many tasks may run heavy test suites at once.
+  test_slots: number;
   created_at: string;
   updated_at: string;
 }
@@ -106,6 +108,9 @@ export interface TaskRow {
   refinement_complete: SqliteBoolean;
   learnings_complete: SqliteBoolean;
   yolo_mode: SqliteBoolean;
+  // Parallel-runs extra: set while the task waits out a provider usage limit.
+  usage_limit_resume_at: string | null;
+  usage_limit_agent_type: AgentType | null;
   completed_at: string | null;
   created_at: string;
   updated_at: string;
