@@ -20,6 +20,8 @@ export const UpdateProjectBodySchema = z.object({
   // The DB layer accepts `null` to clear the column, and the existing
   // type `UpdateProjectRequest` allows `undefined`. Be permissive here.
   subprojectPath: z.string().nullable().optional(),
+  // Parallel-runs extra: concurrent heavy test suites allowed per project.
+  testSlots: z.number().int().min(1).max(32).optional(),
 });
 export type UpdateProjectBody = z.infer<typeof UpdateProjectBodySchema>;
 

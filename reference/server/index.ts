@@ -75,7 +75,8 @@ import webhooksRoutes from './routes/webhooks.js';
 import settingsRoutes from './routes/settings.js';
 import appSettingsRoutes from './routes/appSettings.js';
 import userAgentModelSettingsRoutes from './routes/userAgentModelSettings.js';
-import { initializeDatabase, agentRunsDb } from './database/db.js';
+import { initializeDatabase, agentRunsDb, testSlotsDb } from './database/db.js';
+import { configureUsageLimitResume, restoreUsageLimitPauses } from './services/usageLimitPause.js';
 import { logServerEvent, startServerLifecycleLog } from './services/serverLifecycleLog.js';
 import { findAgentKillCommands } from './services/agentKillCommands.js';
 import { getProject } from './services/projectService.js';
@@ -434,6 +435,18 @@ async function startServer(): Promise<void> {
         `[RECOVERY] Marked ${orphanedRuns.length} orphaned agent run(s) as failed: ${orphanedRuns.map((r) => `#${r.id} (${r.agent_type} for task ${r.task_id})`).join(', ')}`,
       );
     }
+
+    // Parallel-runs extra: no agent run survives a restart, so neither does a
+    // test-slot lease; usage-limit pauses do, and get their timers back.
+    const releasedSlots = testSlotsDb.releaseAll();
+    if (releasedSlots > 0) {
+      console.log(`[RECOVERY] Released ${releasedSlots} test-slot lease(s)`);
+    }
+    configureUsageLimitResume({
+      broadcastFn: (conversationId, message) => broadcastToConversationSubscribers(conversationId, message),
+      broadcastToTaskSubscribersFn: broadcastToTaskSubscribers,
+    });
+    restoreUsageLimitPauses();
 
     console.log(`${c.info('[INFO]')} Using Claude Agents SDK for Claude integration`);
     console.log(

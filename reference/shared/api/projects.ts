@@ -31,6 +31,7 @@ export interface UpdateProjectRequest {
   name?: string | undefined;
   repoFolderPath?: string | undefined;
   subprojectPath?: string | undefined;
+  testSlots?: number | undefined;
 }
 
 export type UpdateProjectResponse = ProjectRow;

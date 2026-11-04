@@ -20,6 +20,9 @@ vi.mock('../database/db.js', () => ({
   },
   userDb: {
     getUserById: vi.fn()
+  },
+  projectsDb: {
+    getByIdAdmin: vi.fn().mockReturnValue({ test_slots: 3 })
   }
 }));
 
@@ -84,6 +87,10 @@ vi.mock('./agentModelSettings.js', () => ({
   })
 }));
 
+vi.mock('./usageLimitPause.js', () => ({
+  cancelUsageLimitPause: vi.fn()
+}));
+
 vi.mock('./autopilotFlag.js', () => ({
   isAutopilotProject: vi.fn().mockReturnValue(false),
 }));
@@ -108,6 +115,7 @@ import { getWorktreeProjectPath, worktreeExists } from './worktree.js';
 import { validateClaudeCredentials } from './claudeCredentials.js';
 import { loadAgentModelSettings } from './agentModelSettings.js';
 import { isAutopilotProject } from './autopilotFlag.js';
+import { cancelUsageLimitPause } from './usageLimitPause.js';
 
 describe('agentRunner', () => {
   const mockTaskWithProject = {
@@ -298,7 +306,7 @@ describe('agentRunner', () => {
 
       expect(startConversation).toHaveBeenCalledWith(
         1,
-        'implementation message',
+        expect.stringMatching(/^implementation message/),
         expect.objectContaining({
           broadcastFn,
           userId: 1,
@@ -353,7 +361,7 @@ describe('agentRunner', () => {
 
       expect(startConversation).toHaveBeenCalledWith(
         1,
-        'review message',
+        expect.stringMatching(/^review message/),
         expect.objectContaining({
           model: 'opus',
           effort: 'high'
@@ -366,7 +374,7 @@ describe('agentRunner', () => {
 
       expect(startConversation).toHaveBeenCalledWith(
         1,
-        'implementation message',
+        expect.stringMatching(/^implementation message/),
         expect.objectContaining({
           disallowedTools: ['Agent']
         })
@@ -390,7 +398,7 @@ describe('agentRunner', () => {
 
       expect(startConversation).toHaveBeenCalledWith(
         1,
-        'review message',
+        expect.stringMatching(/^review message/),
         expect.objectContaining({
           disallowedTools: []
         })
@@ -408,6 +416,23 @@ describe('agentRunner', () => {
       expect(message).toContain('/archive/projects/1/tasks/task-1.md');
       expect(message).toMatch(/## Autopilot decisions/);
       expect(options).toEqual(expect.objectContaining({ disallowedTools: ['Agent', 'AskUserQuestion'] }));
+    });
+
+    it('appends the parallel-runs section with the task port range and test slots', async () => {
+      await startAgentRun(1, 'implementation');
+
+      const [, message] = vi.mocked(startConversation).mock.calls[0]!;
+      expect(message.startsWith('implementation message\n\n## Parallel Runs')).toBe(true);
+      expect(message).toContain('ports 20010–20019');
+      expect(message).toContain('_task1');
+      expect(message).toContain('at most 3 task(s)');
+      expect(message).toMatch(/test-slot.ts acquire 1/);
+    });
+
+    it('cancels a pending usage-limit resume when a run starts', async () => {
+      await startAgentRun(1, 'review');
+
+      expect(cancelUsageLimitPause).toHaveBeenCalledWith(1);
     });
 
     it('leaves the message alone when autopilot is off', async () => {
@@ -428,7 +453,7 @@ describe('agentRunner', () => {
 
       expect(startConversation).toHaveBeenCalledWith(
         1,
-        'review message',
+        expect.stringMatching(/^review message/),
         expect.objectContaining({
           videoConfig: expect.objectContaining({
             taskId: 1,
@@ -448,7 +473,7 @@ describe('agentRunner', () => {
 
       expect(startConversation).toHaveBeenCalledWith(
         1,
-        'review message',
+        expect.stringMatching(/^review message/),
         expect.objectContaining({
           videoConfig: expect.objectContaining({
             worktreePath: '/path/to/project-worktrees/task-1'
@@ -462,7 +487,7 @@ describe('agentRunner', () => {
 
       expect(startConversation).toHaveBeenCalledWith(
         1,
-        'implementation message',
+        expect.stringMatching(/^implementation message/),
         expect.objectContaining({
           videoConfig: null
         })

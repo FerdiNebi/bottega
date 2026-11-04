@@ -172,7 +172,10 @@ and the obvious "pass success/failure into the handler" design is the wrong one.
   callback** — the task may have been completed or blocked in the gap.
 - **Iteration cap.** Every run increments `workflow_run_count`. When it reaches
   the cap (reference: `MAX_WORKFLOW_RUNS = 25`) the loop auto-blocks the task
-  rather than running forever. Manual chats do not count.
+  rather than running forever. Manual chats do not count. (Runs that end on the
+  provider's usage limit don't count either, if the
+  [parallel-runs extra](../extra/parallel-runs.md) is in place: they pause the
+  task and resume it after the reset instead of chaining.)
 - **Orphan recovery on restart.** Agent runs are in-memory streams; a server
   restart orphans any row still marked `running`. On boot, sweep all `running`
   agent runs to `failed` so the UI isn't stuck and the loop can be re-triggered.

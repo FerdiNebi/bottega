@@ -343,6 +343,15 @@ describe('startCodexConversation', () => {
     });
 
     const callArg = vi.mocked(codexProvider.startTurn).mock.calls[0]![0];
-    expect(callArg.env).toEqual({ CODEX_HOME: '/fake', HOME: '/h', PATH: '/p' });
+    // Plus the task's own resources (extra/parallel-runs.md §3).
+    expect(callArg.env).toEqual({
+      CODEX_HOME: '/fake',
+      HOME: '/h',
+      PATH: '/p',
+      BOTTEGA_TASK_ID: '1',
+      BOTTEGA_PROJECT_ID: '7',
+      BOTTEGA_PORT_BASE: '20010',
+      BOTTEGA_PORT_COUNT: '10',
+    });
   });
 });
