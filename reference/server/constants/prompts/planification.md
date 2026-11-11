@@ -66,6 +66,7 @@ Every item in the To-Do List MUST be something the implementation agent can exec
 - Manual git operations (commit, push, branch management) — the PR agent owns all git workflow
 - External services or credentials the agent does not have access to
 - Any step gated on "only when explicitly requested by user" or similar conditional user input
+- Running the project's full test suite or every E2E/browser project (e.g. "run the full `npm test` and the full E2E suite"). The review agent runs the full suite once on the finished commit; as a To-Do item the implementation agent would run it too, on every turn. Targeted tests for the change (a named spec file, one package's tests) are fine. This holds even if `CLAUDE.md` asks for full-suite runs before READY.
 
 If a step cannot be executed by the agent itself end-to-end, leave it out entirely. Do not add it as an unchecked TODO "for later" — unchecked items block the workflow as NEEDS_WORK or BLOCKED.
 

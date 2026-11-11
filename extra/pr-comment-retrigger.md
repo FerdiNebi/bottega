@@ -124,7 +124,8 @@ The resulting prompt (`pr-feedback.md`,
 [`reference/server/constants/prompts/pr-feedback.md`](../reference/server/constants/prompts/pr-feedback.md))
 tells the agent to address every feedback item at its file/line, test, commit +
 push, re-poll CI, resolve conflicts, and finally run `complete-pr.ts` — the same
-bounded CI/conflict procedure as the normal PR prompt. **This reuses the normal
+bounded CI/conflict procedure as the normal PR prompt, including the
+[local CI](./local-ci.md) variant of the CI step. **This reuses the normal
 PR agent and the normal completion flow**: the run is an ordinary `pr`-type
 `task_agent_runs` row with a linked conversation; its stream end hits the same
 completion handler; chaining still does nothing after PR (terminal). The webhook

@@ -190,7 +190,9 @@ remote. Then:
   `mergeAndCleanup` only when CI is `passed` (or `none`: the repository has no
   CI, and the review agent's full-suite run is the test gate) **and** it is
   `MERGEABLE`. Anything else (CI `failed`, `pending` or `unknown`, a conflict,
-  mergeability still unknown) stops autopilot with the reason.
+  mergeability still unknown) stops autopilot with the reason. A project in
+  [local CI](./local-ci.md) mode skips the CI check, because the PR agent's
+  local run was the gate.
 - **The PR is already merged** (someone merged it by hand, or an earlier finish
   merged it but its cleanup failed): `mergeAndCleanup` skips the merge and
   just cleans up. Cleanup warnings are noted in the message but don't stop

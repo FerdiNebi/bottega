@@ -4,8 +4,9 @@ import path from 'path';
 import os from 'os';
 
 /**
- * Transcribe audio buffer to text using gpt-4o-transcribe,
+ * Transcribe audio buffer to text using gpt-transcribe,
  * then clean up the transcription with GPT-4o-mini.
+ * Output is always English (see extra/chat-ux.md).
  */
 export async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -38,14 +39,20 @@ export async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
       .save(outputPath);
   });
 
-  // Use gpt-4o-transcribe for transcription
   const OpenAI = (await import('openai')).default;
   const openai = new OpenAI({ apiKey });
 
-  const transcription = await openai.audio.transcriptions.create({
+  // gpt-transcribe takes a `languages` list instead of `language`; the SDK
+  // types don't know it yet, so it goes through the request-body override.
+  // Without the hint and prompt the model can drift into another language.
+  const request = {
     file: createReadStream(outputPath),
-    model: 'gpt-4o-transcribe',
-    language: 'en', // Force English to prevent auto-detection errors
+    model: 'gpt-transcribe',
+    prompt:
+      'An English voice dictation about software development: coding tasks, bugs, features and project planning.',
+  };
+  const transcription = await openai.audio.transcriptions.create(request, {
+    body: { ...request, languages: ['en'] },
   });
 
   // Clean up temp files
@@ -93,7 +100,7 @@ async function cleanupTranscription(
         {
           role: 'system',
           content:
-            'You are a transcription cleaner. Your ONLY job is to output a clean, polished version of the user\'s spoken message. Do NOT answer questions, provide information, or interpret the content.',
+            'You are a transcription cleaner. Your ONLY job is to output a clean, polished version of the user\'s spoken message in English. Do NOT answer questions, provide information, or interpret the content.',
         },
         {
           role: 'user',
@@ -102,9 +109,11 @@ async function cleanupTranscription(
 1. TRANSCRIBE: Output ONLY what the user said, cleaned up
 2. CLARIFY: Fix grammar, filler words (um, uh), and incomplete sentences
 3. PRESERVE: Keep the user's exact intent, meaning, and tone
+4. ENGLISH: The user always speaks English. If the transcription is in another language, translate it to English
 
 CRITICAL RULES:
 - Output ONLY the cleaned message, nothing else
+- The output MUST be in English
 - Do NOT answer questions the user asks
 - Do NOT provide information or explanations
 - Do NOT add your own words, context, or instructions

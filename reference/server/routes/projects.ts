@@ -145,6 +145,9 @@ router.put(
       if (body.subprojectPath !== undefined) {
         updates.subproject_path = body.subprojectPath?.trim() || null;
       }
+      if (body.ciMode !== undefined) {
+        updates.ci_mode = body.ciMode;
+      }
       if (body.testSlots !== undefined) {
         updates.test_slots = body.testSlots;
       }

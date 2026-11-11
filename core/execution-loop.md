@@ -109,6 +109,28 @@ already passed at the same commit, and re-reviewing a whole task after a
 one-line fix. So the implementer gives fast feedback, the reviewer runs the
 expensive suite once, and re-reviews look only at what changed.
 
+**The full suite** is everything that is slow: the unit/integration suite plus
+any end-to-end or browser suites the project has. The reviewer runs all of it,
+once, and records the exact commands in its `**Full suite:**` line, so later
+stages (the [local CI](../extra/local-ci.md) PR step) can recognize a pass
+they would otherwise repeat. Two rules keep it from running more often:
+
+- **The plan never schedules it.** Planning does not put "run the full suite"
+  or "run all E2E projects" into the To-Do List. A checkbox there forces the
+  implementer to run it, and the early-return guard then forces it again on
+  every implement turn. Targeted tests for the change (a named spec, one
+  package's tests) are fine as To-Do items.
+- **It is skipped when nothing it tests changed.** If the branch's diff against
+  the base touches only files no test, build or app code reads (Markdown docs,
+  `CLAUDE.md` and its notes, the CI workflow files themselves), the suites
+  cannot tell anything new. The reviewer records `**Full suite:** not needed
+  (only <kinds of files> changed)` and checks what the change itself can break
+  instead (e.g. the changed workflow parses and the scripts it names exist).
+
+Project notes (`CLAUDE.md`) do not override this split; the
+[learnings agent](../extra/learnings-agent.md) is told not to write such
+rules.
+
 ## How the loop reads all this
 
 The transitions live in [`orchestration-loop.md`](./orchestration-loop.md); in
@@ -138,8 +160,9 @@ keeps the loop dumb and reliable (see
       checks → commit → write the Verification Log → never ask questions.
 - [ ] Disallow sub-agent delegation for the implementation agent.
 - [ ] The review prompt: early-return guard → first review (strict per-item
-      verification, trust logged checks at the current commit, full suite once,
-      all manual scenarios) or re-review (previous findings + diff since the
+      verification, trust logged checks at the current commit, full suite once
+      with its commands recorded, or not at all when only non-code files
+      changed, all manual scenarios) or re-review (previous findings + diff since the
       reviewed commit, targeted tests) → READY / NEEDS_WORK / BLOCKED → replace
       findings with the reviewed commit and full-suite marker, uncheck failed
       items, never fix code.

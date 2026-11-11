@@ -73,9 +73,13 @@ If ANY checked item fails verification → the final status is NEEDS_WORK, regar
 ### 3. Run Unit Tests
 The implementation agent already ran targeted tests and the CI fast checks; the Verification Log says which. Don't repeat those at the same commit.
 
+The **full suite** is every slow suite the project has: the unit/integration suite plus any end-to-end or browser suites (all their projects/browsers), as `CLAUDE.md` and the package scripts name them. You are the only stage that runs all of it before the PR, so run all of it, and record each command in the `**Full suite:**` line; the PR step reuses those results instead of running them again.
+
+**No code changed:** if `git diff --name-only {{baseBranch}}...HEAD` lists only files no test, build or app code reads (Markdown docs, `CLAUDE.md`, `docs/agent-notes/`, CI workflow files), do not run the full suite: record `**Full suite:** not needed (only <kinds of files> changed)`. Check what the change itself can break instead: a changed workflow still parses and the scripts and commands it names exist.
+
 **First review:**
 1. Run targeted tests only for code you suspect is under-tested, or for checks missing from the Verification Log (check CLAUDE.md for the test command)
-2. Run the **full test suite once**, in the foreground with the Bash tool's `timeout: 600000` (full suites can take 5-10 minutes)
+2. Run the **full suite once**, each command in the foreground with the Bash tool's `timeout: 600000` (full suites can take 5-10 minutes)
 3. Do NOT use `run_in_background`: nothing wakes you when a background command finishes, and ending your turn ends this review. If the suite times out after 10 minutes, run it in parts (for example one test directory per call), each in the foreground
 4. Do NOT re-run the full suite in the same review unless that run was broken by the environment (not by a test failure). Do NOT start parallel test runs, they compete for resources
 
@@ -171,7 +175,7 @@ Update the task documentation file at `{{taskDocPath}}`:
 
 **Status:** NEEDS_WORK
 **Reviewed commit:** <sha from Step 1b>
-**Full suite:** PASS at <sha> / FAIL at <sha> / not run
+**Full suite:** PASS at <sha> (`<command>`, `<command>`, …) / FAIL at <sha> (`<command that failed>`) / not needed (<why>) / not run
 
 ### Unit Tests
 - Result: [PASS/FAIL]

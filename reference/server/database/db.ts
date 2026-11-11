@@ -8,6 +8,7 @@ import type {
   AgentRunStatus,
   AgentType,
   AppSettingRow,
+  CiMode,
   ConversationRow,
   ProjectMemberRow,
   ProjectRow,
@@ -539,6 +540,11 @@ const runMigrations = (): void => {
       `);
     }
 
+    if (!projectColumnNames.includes('ci_mode')) {
+      console.log('Running migration: Adding ci_mode column to projects (local CI extra)');
+      db.exec("ALTER TABLE projects ADD COLUMN ci_mode TEXT DEFAULT 'github' NOT NULL");
+    }
+
     if (!projectColumnNames.includes('test_slots')) {
       console.log('Running migration: Adding test_slots column to projects');
       db.exec('ALTER TABLE projects ADD COLUMN test_slots INTEGER DEFAULT 2 NOT NULL');
@@ -920,6 +926,7 @@ export interface ProjectUpdates {
   name?: string;
   repo_folder_path?: string;
   subproject_path?: string | null;
+  ci_mode?: CiMode;
   test_slots?: number;
 }
 
@@ -1000,6 +1007,7 @@ const projectsDb = {
       'name',
       'repo_folder_path',
       'subproject_path',
+      'ci_mode',
       'test_slots',
     ];
     const setClause: string[] = [];
@@ -1110,6 +1118,7 @@ export type TaskWithProject = TaskRow & {
   project_name: string;
   repo_folder_path: string;
   subproject_path: string | null;
+  ci_mode: CiMode;
 };
 
 export interface TaskUpdates {
@@ -1182,7 +1191,8 @@ const tasksDb = {
                 p.user_id AS project_user_id,
                 p.name AS project_name,
                 p.repo_folder_path,
-                p.subproject_path
+                p.subproject_path,
+                p.ci_mode
          FROM tasks t
          JOIN projects p ON t.project_id = p.id
          WHERE t.id = ?`

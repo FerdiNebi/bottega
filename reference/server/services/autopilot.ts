@@ -27,6 +27,7 @@ import { ProviderCredentialsMissingError } from './credentials/types.js';
 import { startMilestoneSession } from './milestoneVerification.js';
 import { isMilestoneTitle } from '../../shared/milestones.js';
 import type { ProjectRow, TaskRow } from '../database/db.js';
+import type { CiMode } from '../../shared/types/db.js';
 import type { AutopilotStatusResponse } from '@shared/api/projects';
 import type {
   AgentType,
@@ -334,7 +335,7 @@ async function finishLocked(taskId: number, ctx: AutopilotContext): Promise<bool
   if (!project || project.autopilot_enabled !== 1) return false;
 
   const repoPath = task.repo_folder_path;
-  const merged = await mergeTask(repoPath, task);
+  const merged = await mergeTask(repoPath, task, project.ci_mode);
   if (!merged.ok) {
     stopAutopilot(projectId, `${label(task)}: ${merged.reason}`);
     return false;
@@ -370,6 +371,7 @@ type MergeOutcome ={ ok: true; note?: string } | { ok: false; reason: string };
 async function mergeTask(
   repoPath: string,
   task: TaskRow,
+  ciMode: CiMode,
 ): Promise<MergeOutcome> {
   if (!(await worktreeExists(repoPath, task.id))) {
     return { ok: true, note: 'no worktree to merge' };
@@ -389,8 +391,10 @@ async function mergeTask(
       if (pr.state !== 'OPEN') {
         return { ok: false, reason: `the PR is ${String(pr.state).toLowerCase()} (${pr.url})` };
       }
+      // In local CI mode the PR agent ran CI itself before signalling
+      // pr_agent_complete, so the PR's hosted checks are not the gate.
       const ci = pr.ciStatus?.status ?? 'none';
-      if (ci !== 'passed' && ci !== 'none') {
+      if (ciMode !== 'local' && ci !== 'passed' && ci !== 'none') {
         return { ok: false, reason: `CI is ${ci} on ${pr.url}` };
       }
       if (pr.mergeable !== 'MERGEABLE') {
