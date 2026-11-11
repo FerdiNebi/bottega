@@ -51,7 +51,8 @@ vi.mock('../constants/agentPrompts.js', () => ({
 vi.mock('./worktree.js', () => ({
   getWorktreePath: vi.fn(),
   getWorktreeProjectPath: vi.fn(),
-  worktreeExists: vi.fn()
+  worktreeExists: vi.fn(),
+  getDefaultBranch: vi.fn().mockResolvedValue('main'),
 }));
 
 vi.mock('./claudeCredentials.js', () => ({
@@ -240,7 +241,7 @@ describe('agentRunner', () => {
     it('should create agent run and conversation for review agent', async () => {
       const result = await startAgentRun(1, 'review');
 
-      expect(generateReviewMessage).toHaveBeenCalledWith('/archive/projects/1/tasks/task-1.md', 1);
+      expect(generateReviewMessage).toHaveBeenCalledWith('/archive/projects/1/tasks/task-1.md', 1, 'main');
       expect(agentRunsDb.create).toHaveBeenCalledWith(1, 'review', null, 'anthropic');
       expect(conversationsDb.create).toHaveBeenCalledWith(1, 'anthropic', 'opus', 'high');
       expect(result.agentRun).toEqual(mockAgentRun);
