@@ -120,6 +120,9 @@ export interface TaskRow {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+  // Estimated spend of all the task's conversations in USD. Joined in by the
+  // project task list (not a column); absent or null when unknown.
+  cost_usd?: number | null | undefined;
 }
 
 // ---- conversations --------------------------------------------------------
@@ -146,6 +149,9 @@ export interface ConversationRow {
   // Provider reasoning effort, or null when the provider has none (OpenCode)
   // or the conversation didn't pick one (manual chats).
   effort: string | null;
+  // Estimated spend in USD so far (latest cumulative SDK total); null when the
+  // provider reports no cost.
+  cost_usd: number | null;
   created_at: string;
 }
 
@@ -162,6 +168,9 @@ export interface AgentRunRow {
   provider: Provider;
   created_at: string;
   completed_at: string | null;
+  // Estimated spend of the run's conversation in USD. Joined in by list
+  // queries (not a column); absent or null when unknown.
+  cost_usd?: number | null | undefined;
 }
 
 // ---- messages (Claude Agent SDK transcript store) -------------------------

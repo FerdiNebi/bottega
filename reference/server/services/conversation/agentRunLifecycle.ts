@@ -122,7 +122,10 @@ export function buildAgentRunCompletionHandler(
       const finished = await autopilot.finishIfPrCompletedOutsideRun(taskId, ctx);
       const pausedOnUsageLimit = !!tasksDb.getById(taskId)?.usage_limit_resume_at;
       if (!finished && linkedAgentRun?.status === 'failed' && !pausedOnUsageLimit) {
-        autopilot.onAutopilotLoopStopped(taskId, `the ${linkedAgentRun.agent_type} run was stopped.`);
+        autopilot.onAutopilotLoopStopped(
+          taskId,
+          ctx.stopReason ?? `the ${linkedAgentRun.agent_type} run was stopped.`,
+        );
       }
     }
 

@@ -176,6 +176,33 @@ is the same DB-driven truth the completion handler uses; the UI is just a second
 reader of those booleans. The little chat-bubble button beside a finished run
 deep-links to that run's conversation so the human can read what it did.
 
+## Cost: per task on the board, per step on Task Detail
+
+Every conversation carries an **estimated cost** in USD (`conversations.cost_usd`),
+where the harness reports one. For Claude that is the SDK's
+`result.total_cost_usd`, which is cumulative for the session and continues
+across resumes, so each turn's result **replaces** the stored total. It is never
+added up across results. Never lower a stored total: a crashed turn can report
+zero. Harnesses that report no cost leave it `NULL`, and the UI shows nothing.
+
+- **Board card:** the task's cost is the sum over all its conversations (agent
+  runs and manual chats), returned as `cost_usd` on each row of
+  `GET /api/projects/:projectId/tasks`.
+- **AgentSection:** each step shows the sum over **all** its runs, since the
+  implementation ↔ review loop runs a step several times. A run count appears
+  when there is more than one run. The header shows the total of all agent runs.
+  Each row of `GET /api/tasks/:taskId/agent-runs` carries its conversation's
+  `cost_usd`.
+- **Live:** whenever a result records a cost, the server sends
+  `task-cost-updated { taskId, conversationId, conversationCostUsd, taskCostUsd }`
+  on the task channel. The board patches the card, and Task Detail patches the
+  run linked to that conversation.
+
+Existing Claude conversations are backfilled once, when the column is added,
+from the `cost-state` entries the SDK writes into transcripts: the largest
+`totalCostUSD` per session. These are API-price estimates, not a bill. See
+[`reference/server/services/conversation/costTracking.ts`](../reference/server/services/conversation/costTracking.ts).
+
 ## Live updates via WebSocket task subscriptions
 
 The board would be dead between REST snapshots without a push channel. The client
@@ -226,6 +253,9 @@ it.
       lists live.
 - [ ] Agent button states derived from agent-run `status` + task flags, never
       from agent output.
+- [ ] Estimated cost per conversation (the latest cumulative harness total),
+      shown summed per task on board cards and per step in the AgentSection,
+      kept live by `task-cost-updated`.
 
 ## Reference map
 

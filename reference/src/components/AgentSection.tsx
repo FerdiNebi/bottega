@@ -9,6 +9,7 @@ import React, { useState, type ComponentType } from 'react';
 import { Play, Check, Loader2, FileText, Code, CheckCircle, MessageCircle, AlertCircle, GitPullRequest, Sparkles, Zap, BookOpen, PauseCircle } from 'lucide-react';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
+import { formatCost } from '../utils/formatCost';
 import type { AgentRunRow, AgentType } from '../../shared/types/db';
 
 type IconComponent = ComponentType<{ className?: string | undefined }>;
@@ -125,6 +126,15 @@ function AgentSection({
       );
   };
 
+  // A step's cost is the sum over ALL its runs: the implementation↔review
+  // loop runs a step several times, and each run has its own conversation.
+  const getStepCost = (agentType: AgentType): { usd: number; runs: number } => {
+    const runs = agentRuns.filter(r => r.agent_type === agentType);
+    const usd = runs.reduce((sum, r) => sum + (r.cost_usd ?? 0), 0);
+    return { usd, runs: runs.length };
+  };
+  const totalCost = formatCost(agentRuns.reduce((sum, r) => sum + (r.cost_usd ?? 0), 0));
+
   const getAgentStatus = (agentType: AgentType) => {
     return getAgentRun(agentType)?.status ?? null;
   };
@@ -148,7 +158,18 @@ function AgentSection({
 
   return (
     <div className={cn('p-4 border-t border-border min-w-0', className)}>
-      <h3 className="text-sm font-medium text-foreground mb-3">Agents</h3>
+      <div className="flex items-baseline justify-between mb-3">
+        <h3 className="text-sm font-medium text-foreground">Agents</h3>
+        {totalCost && (
+          <span
+            className="text-xs text-muted-foreground"
+            title="Estimated cost of all agent runs on this task"
+            data-testid="agents-total-cost"
+          >
+            {totalCost} total
+          </span>
+        )}
+      </div>
       {usageLimitResumeAt && (
         <div
           className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
@@ -177,6 +198,8 @@ function AgentSection({
           const isFailed = status === 'failed';
           const isInProgress = status === 'running' || status === 'pending';
           const hasConversation = !!agentRun?.conversation_id;
+          const stepCost = getStepCost(agent.type);
+          const stepCostLabel = formatCost(stepCost.usd);
           const Icon = agent.icon;
 
           return (
@@ -215,8 +238,20 @@ function AgentSection({
                       : 'text-muted-foreground'
                   )} />
                 </div>
-                <div>
-                  <p className="text-sm font-medium">{agent.label}</p>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">
+                    {agent.label}
+                    {stepCostLabel && (
+                      <span
+                        className="ml-2 text-xs font-normal text-muted-foreground"
+                        title={`Estimated cost of ${stepCost.runs} run${stepCost.runs !== 1 ? 's' : ''}`}
+                        data-testid={`step-cost-${agent.type}`}
+                      >
+                        {stepCostLabel}
+                        {stepCost.runs > 1 ? ` · ${stepCost.runs} runs` : ''}
+                      </span>
+                    )}
+                  </p>
                   <p className="text-xs text-muted-foreground">{agent.description}</p>
                 </div>
               </div>

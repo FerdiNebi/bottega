@@ -111,6 +111,9 @@ CREATE TABLE IF NOT EXISTS conversations (
     -- Provider reasoning effort, or NULL when the provider has none
     -- (OpenCode) or the conversation didn't choose one (manual chats).
     effort TEXT DEFAULT NULL,
+    -- Estimated spend in USD so far: the latest SDK `result.total_cost_usd`,
+    -- which is cumulative across resumes. NULL when the provider reports none.
+    cost_usd REAL DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 );

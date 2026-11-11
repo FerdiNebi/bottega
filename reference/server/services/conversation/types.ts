@@ -50,6 +50,12 @@ export interface ConversationOptions {
   model?: string | undefined;
   effort?: string | null | undefined;
   disallowedTools?: string[] | undefined;
+  /**
+   * Turn budget for this run (SDK `maxTurns`). A run that spends it is
+   * stopped, not chained (see turnLimit.ts). Claude only; other harnesses
+   * ignore it.
+   */
+  maxTurns?: number | undefined;
   askUserQuestionToolResult?: AskUserQuestionToolResult | undefined;
   videoConfig?: VideoConfig | null | undefined;
   /**
@@ -70,6 +76,11 @@ export interface StreamingContext {
   isNewSession: boolean;
   broadcastClaudeStatus?: boolean | undefined;
   videoConfig?: VideoConfig | null | undefined;
+  /**
+   * Why the linked agent run was stopped, when Bottega stopped it (e.g. the
+   * turn limit). Used as the autopilot stop reason instead of the generic one.
+   */
+  stopReason?: string | undefined;
 }
 
 export interface LifecycleHooks {

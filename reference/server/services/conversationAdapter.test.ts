@@ -89,6 +89,11 @@ vi.mock('./usageLimitPause.js', () => ({
   cancelUsageLimitPause: vi.fn(),
 }));
 
+// The turn-limit stop itself is unit-tested in conversation/turnLimit.test.ts.
+vi.mock('./conversation/turnLimit.js', () => ({
+  stopRunForTurnLimit: vi.fn(),
+}));
+
 vi.mock('./projectService.js', () => ({
   hasProjectAccess: vi.fn().mockReturnValue(true),
 }));
@@ -155,6 +160,7 @@ const RESOLVED_DEFAULT_MODEL = 'claude-opus-4-7';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { conversationsDb, tasksDb, agentRunsDb } from '../database/db.js';
 import { pauseRunForUsageLimit } from './usageLimitPause.js';
+import { stopRunForTurnLimit } from './conversation/turnLimit.js';
 import { notifyClaudeComplete } from './notifications.js';
 import { auditClaudeLaunch, buildClaudeSdkEnv } from './claudeCredentials.js';
 import { sqliteSessionStore } from './sqliteSessionStore.js';
@@ -952,6 +958,38 @@ it('should broadcast streaming-ended event when streaming completes', async () =
       });
     });
 
+    it('passes maxTurns to the SDK when specified', async () => {
+      vi.mocked(query).mockReturnValue({
+        [Symbol.asyncIterator]: () => ({
+          next: vi.fn()
+            .mockResolvedValueOnce({ value: { session_id: 'session-123', type: 'message' }, done: false })
+            .mockResolvedValueOnce({ value: { type: 'result', modelUsage: {} }, done: false })
+            .mockResolvedValueOnce({ done: true })
+        })
+      } as never);
+
+      await startConversation(1, 'Hello', { model: 'opus', maxTurns: 150 });
+
+      const callOptions = vi.mocked(query).mock.calls[0]![0].options;
+      expect(callOptions!.maxTurns).toBe(150);
+    });
+
+    it('sets no maxTurns when none was given', async () => {
+      vi.mocked(query).mockReturnValue({
+        [Symbol.asyncIterator]: () => ({
+          next: vi.fn()
+            .mockResolvedValueOnce({ value: { session_id: 'session-123', type: 'message' }, done: false })
+            .mockResolvedValueOnce({ value: { type: 'result', modelUsage: {} }, done: false })
+            .mockResolvedValueOnce({ done: true })
+        })
+      } as never);
+
+      await startConversation(1, 'Hello', { model: 'opus' });
+
+      const callOptions = vi.mocked(query).mock.calls[0]![0].options;
+      expect(callOptions).not.toHaveProperty('maxTurns');
+    });
+
     it('should not include disallowedTools in SDK options when empty', async () => {
       const mockMessages = [
         { session_id: 'session-123', type: 'message' },
@@ -1079,6 +1117,39 @@ it('should broadcast streaming-ended event when streaming completes', async () =
       expect(pauseRunForUsageLimit).toHaveBeenCalledWith(
         expect.objectContaining({ conversationId: 1, taskId: 1 }),
         { resetsAt: null },
+      );
+      expect(agentRunsDb.updateStatus).not.toHaveBeenCalledWith(5, 'completed');
+    });
+
+    it('stops the agent run instead of completing it when the turn hit its turn limit', async () => {
+      const mockAgentRun = { id: 5, conversation_id: 1, agent_type: 'implementation', status: 'running' };
+      vi.mocked(agentRunsDb.getByTask).mockReturnValue([mockAgentRun] as never);
+      // The real stop marks the run failed before the completion handler runs.
+      vi.mocked(stopRunForTurnLimit).mockImplementation(() => {
+        mockAgentRun.status = 'failed';
+        return true;
+      });
+
+      const mockIterator = {
+        [Symbol.asyncIterator]: () => ({
+          next: vi.fn()
+            .mockResolvedValueOnce({ value: { session_id: 'session-123', type: 'message' }, done: false })
+            .mockResolvedValueOnce({
+              value: { type: 'result', subtype: 'error_max_turns', is_error: true, modelUsage: {} },
+              done: false,
+            })
+            .mockResolvedValueOnce({ done: true })
+        })
+      };
+      vi.mocked(query).mockReturnValue(mockIterator as never);
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      await startConversation(1, 'Hello', { model: 'opus', conversationId: 1, maxTurns: 150 });
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      expect(stopRunForTurnLimit).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationId: 1, taskId: 1 }),
+        150,
       );
       expect(agentRunsDb.updateStatus).not.toHaveBeenCalledWith(5, 'completed');
     });

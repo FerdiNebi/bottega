@@ -60,6 +60,34 @@ describe('AgentSection', () => {
     vi.clearAllMocks();
   });
 
+  describe('step costs', () => {
+    it("sums each step's runs and shows the task total", () => {
+      render(
+        <AgentSection
+          {...defaultProps}
+          agentRuns={[
+            asAgentRun({ id: 1, agent_type: 'implementation', status: 'completed', conversation_id: 11, cost_usd: 3.5 }),
+            asAgentRun({ id: 3, agent_type: 'implementation', status: 'completed', conversation_id: 13, cost_usd: 1.25 }),
+            asAgentRun({ id: 2, agent_type: 'review', status: 'running', conversation_id: 12, cost_usd: 0.8 }),
+            asAgentRun({ id: 4, agent_type: 'pr', status: 'running', conversation_id: 14, cost_usd: null }),
+          ]}
+        />,
+      );
+
+      expect(screen.getByTestId('step-cost-implementation').textContent).toBe('$4.75 · 2 runs');
+      expect(screen.getByTestId('step-cost-review').textContent).toBe('$0.80');
+      expect(screen.queryByTestId('step-cost-pr')).toBeNull();
+      expect(screen.queryByTestId('step-cost-planification')).toBeNull();
+      expect(screen.getByTestId('agents-total-cost').textContent).toBe('$5.55 total');
+    });
+
+    it('shows no costs before any are known', () => {
+      render(<AgentSection {...defaultProps} />);
+
+      expect(screen.queryByTestId('agents-total-cost')).toBeNull();
+    });
+  });
+
   describe('usage-limit pause', () => {
     it('shows when the paused task resumes', () => {
       render(<AgentSection {...defaultProps} usageLimitResumeAt="2026-11-03T19:22:00.000Z" />);

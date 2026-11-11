@@ -34,6 +34,8 @@ import {
 import { buildAgentRunCompletionHandler } from './agentRunLifecycle.js';
 import { runStreamingLoop } from './runStreamingLoop.js';
 import { pauseRunForUsageLimit } from '../usageLimitPause.js';
+import { stopRunForTurnLimit } from './turnLimit.js';
+import { recordConversationCost } from './costTracking.js';
 import { buildTaskEnv } from '../taskResources.js';
 import { isClaudeAuthError, delay, AUTH_RETRY_BACKOFF_MS } from './retryOn401.js';
 import { startCodexConversation, sendCodexMessage } from './startCodexConversation.js';
@@ -132,6 +134,7 @@ export async function startConversation(
     model,
     effort,
     disallowedTools: normalizedOptions.disallowedTools,
+    maxTurns: normalizedOptions.maxTurns,
     env: claudeEnv,
     canUseTool: allowAllTools,
     askUserQuestionHook: buildAskUserQuestionHook({ conversationId, broadcastFn }),
@@ -273,7 +276,7 @@ export async function startConversation(
 
     void (async () => {
       try {
-        const { authError, usageLimit } = await runStreamingLoop({
+        const { authError, usageLimit, maxTurnsHit } = await runStreamingLoop({
           queryInstance: queryInstance as never,
           conversationId: conversationId,
           broadcastFn,
@@ -288,6 +291,7 @@ export async function startConversation(
           // loop never returns. runStreamingLoop swallows the resulting
           // abort error so we still reach the success path below.
           onResult: () => abortController.abort(),
+          onCost: (usd) => recordConversationCost(ctx, usd),
         });
 
         // In-band 401: the SDK delivered the auth failure as data instead
@@ -324,6 +328,9 @@ export async function startConversation(
         // handler below doesn't chain) and resume after the reset.
         if (usageLimit) {
           pauseRunForUsageLimit(ctx, usageLimit);
+        } else if (maxTurnsHit) {
+          // Turn limit: stop the run (marked failed, so no chaining).
+          stopRunForTurnLimit(ctx, normalizedOptions.maxTurns);
         }
 
         await composeOnComplete(ctx)();
@@ -596,6 +603,7 @@ export async function sendMessage(
       // subprocess after `result` so a leftover background bash can't pin
       // the iterator open. runStreamingLoop swallows the abort error.
       onResult: () => abortController.abort(),
+      onCost: (usd) => recordConversationCost(ctx, usd),
     });
 
     // In-band 401: see matching comment in startConversation.

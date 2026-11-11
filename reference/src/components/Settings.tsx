@@ -8,6 +8,7 @@ import { useAppSettings } from '../contexts/AppSettingsContext';
 import { api } from '../utils/api';
 import AgentPromptsTab from './AgentPromptsTab';
 import AgentModelsTab from './AgentModelsTab';
+import ImplementationTurnLimitSetting from './ImplementationTurnLimitSetting';
 import ApiKeyPanel from './ApiKeyPanel';
 import CodexAuthPanel from './CodexAuthPanel';
 import ClaudeAuthPanel from './ClaudeAuthPanel';
@@ -681,6 +682,7 @@ function Settings({
             {/* Agent Models Tab — per-user provider/model/effort per agent. */}
             {activeTab === 'agentModels' && (
               <div className="min-h-[500px]">
+                <ImplementationTurnLimitSetting />
                 <AgentModelsTab />
               </div>
             )}

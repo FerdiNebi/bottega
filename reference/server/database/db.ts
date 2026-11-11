@@ -108,6 +108,77 @@ const lastInsertId = (rowid: number | bigint): number => Number(rowid);
  * testing. `INSERT OR IGNORE` keeps it safe to run against users who already
  * have a row.
  */
+/**
+ * Fill `conversations.cost_usd` from the `cost-state` transcript entries the
+ * Claude SDK writes (cumulative per session, so the max is the total). Only
+ * rows still NULL are touched. Exported for testing.
+ */
+export function backfillConversationCosts(database: Database.Database): number {
+  return database
+    .prepare(
+      `UPDATE conversations SET cost_usd = s.cost
+       FROM (
+         SELECT session_id, MAX(json_extract(entry_json, '$.totalCostUSD')) AS cost
+         FROM messages
+         WHERE entry_json LIKE '{"type":"cost-state"%'
+         GROUP BY session_id
+       ) AS s
+       WHERE s.session_id = conversations.claude_conversation_id
+         AND conversations.cost_usd IS NULL`,
+    )
+    .run().changes;
+}
+
+/** `conversationsDb.recordCost` against an explicit handle. Exported for testing. */
+export function recordConversationCostIn(
+  database: Database.Database,
+  conversationId: number,
+  totalCostUsd: number,
+): number | null {
+  const row = database
+    .prepare(
+      `UPDATE conversations SET cost_usd = MAX(COALESCE(cost_usd, 0), ?)
+       WHERE id = ?
+       RETURNING cost_usd`,
+    )
+    .get(totalCostUsd, conversationId) as { cost_usd: number } | undefined;
+  return row ? row.cost_usd : null;
+}
+
+/** `conversationsDb.getTaskCost` against an explicit handle. Exported for testing. */
+export function taskCostIn(database: Database.Database, taskId: number): number | null {
+  const row = database
+    .prepare('SELECT SUM(cost_usd) AS cost FROM conversations WHERE task_id = ?')
+    .get(taskId) as { cost: number | null } | undefined;
+  return row?.cost ?? null;
+}
+
+/** A project's tasks, newest first, each with its summed `cost_usd`. Exported for testing. */
+export function tasksWithCostIn(database: Database.Database, projectId: number): TaskRow[] {
+  return database
+    .prepare(
+      `SELECT t.*,
+              (SELECT SUM(c.cost_usd) FROM conversations c WHERE c.task_id = t.id) AS cost_usd
+       FROM tasks t
+       WHERE t.project_id = ?
+       ORDER BY t.created_at DESC`,
+    )
+    .all(projectId) as TaskRow[];
+}
+
+/** A task's agent runs, newest first, each with its conversation's `cost_usd`. Exported for testing. */
+export function agentRunsWithCostIn(database: Database.Database, taskId: number): AgentRunRow[] {
+  return database
+    .prepare(
+      `SELECT r.*, c.cost_usd AS cost_usd
+       FROM task_agent_runs r
+       LEFT JOIN conversations c ON c.id = r.conversation_id
+       WHERE r.task_id = ?
+       ORDER BY r.created_at DESC`,
+    )
+    .all(taskId) as AgentRunRow[];
+}
+
 export function backfillUserAgentModelSettings(database: Database.Database): void {
   const backfilled = database
     .prepare(`SELECT value FROM app_settings WHERE key = 'user_agent_settings_backfilled'`)
@@ -461,6 +532,21 @@ const runMigrations = (): void => {
     if (!convColumnNamesUpdated.includes('effort')) {
       console.log('Running migration: Adding effort column to conversations');
       db.exec('ALTER TABLE conversations ADD COLUMN effort TEXT DEFAULT NULL');
+    }
+
+    // cost_usd — estimated spend per conversation. Backfill Claude rows from
+    // the `cost-state` entries the SDK writes into transcripts (cumulative, so
+    // the max per session is the conversation's total). One table scan.
+    if (!convColumnNamesUpdated.includes('cost_usd')) {
+      console.log('Running migration: Adding cost_usd column to conversations');
+      db.exec('ALTER TABLE conversations ADD COLUMN cost_usd REAL DEFAULT NULL');
+      try {
+        backfillConversationCosts(db);
+      } catch (backfillError) {
+        const message =
+          backfillError instanceof Error ? backfillError.message : String(backfillError);
+        console.error('Error backfilling conversations.cost_usd:', message);
+      }
     }
 
     // task_agent_runs.provider — diagnostics only. Runtime always reads
@@ -1174,11 +1260,7 @@ const tasksDb = {
     return db.prepare(query).all(...params) as TaskWithProjectSummary[];
   },
 
-  getByProject: (projectId: number): TaskRow[] => {
-    return db
-      .prepare('SELECT * FROM tasks WHERE project_id = ? ORDER BY created_at DESC')
-      .all(projectId) as TaskRow[];
-  },
+  getByProject: (projectId: number): TaskRow[] => tasksWithCostIn(db, projectId),
 
   getById: (id: number): TaskRow | undefined => {
     return db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as TaskRow | undefined;
@@ -1505,6 +1587,18 @@ const conversationsDb = {
     return result.changes > 0;
   },
 
+  /**
+   * Record the SDK's cumulative cost for a conversation. Keeps the larger of
+   * the stored and reported totals: a crashed turn can report zero, and a
+   * resumed session continues from the saved total anyway. Returns the
+   * stored total, or null when the conversation doesn't exist.
+   */
+  recordCost: (id: number, totalCostUsd: number): number | null =>
+    recordConversationCostIn(db, id, totalCostUsd),
+
+  /** Estimated spend of all of a task's conversations, or null when none is known. */
+  getTaskCost: (taskId: number): number | null => taskCostIn(db, taskId),
+
   getContextUsage: (id: number): unknown => {
     const row = db
       .prepare('SELECT context_usage_json FROM conversations WHERE id = ?')
@@ -1551,15 +1645,7 @@ const agentRunsDb = {
     };
   },
 
-  getByTask: (taskId: number): AgentRunRow[] => {
-    return db
-      .prepare(
-        `SELECT * FROM task_agent_runs
-         WHERE task_id = ?
-         ORDER BY created_at DESC`
-      )
-      .all(taskId) as AgentRunRow[];
-  },
+  getByTask: (taskId: number): AgentRunRow[] => agentRunsWithCostIn(db, taskId),
 
   getById: (id: number): AgentRunRow | undefined => {
     return db
@@ -1724,6 +1810,8 @@ const testSlotsDb = {
 const APP_SETTINGS_DEFAULTS: Record<string, string> = {
   internal_tool_name: 'Bottega',
   github_pr_trigger: 'bottega',
+  // Turn budget of an implementation run (core/execution-loop.md); 0 = no cap.
+  implementation_max_turns: '150',
 };
 
 const appSettingsDb = {
