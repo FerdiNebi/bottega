@@ -380,6 +380,12 @@ describe('full-suite ownership (core/execution-loop.md)', () => {
     expect(msg).toContain('**Full suite:** not needed (only <kinds of files> changed)');
   });
 
+  it('has the reviewer read suite results from a log file, not a tail-piped run', async () => {
+    const msg = await generateReviewMessage('/t.md', 7, 'main');
+    expect(msg).toContain('> /tmp/suite-7-1.log 2>&1; echo EXIT=$?');
+    expect(msg).toContain('Do NOT pipe the command itself through `tail` or `head`');
+  });
+
   it('keeps full-suite runs out of the plan and out of implementation', async () => {
     expect(await generatePlanificationMessage('/t.md', 1)).toContain(
       'Running the project\'s full test suite or every E2E/browser project',

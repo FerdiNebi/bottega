@@ -80,7 +80,7 @@ The **full suite** is every slow suite the project has: the unit/integration sui
 
 **First review:**
 1. Run targeted tests only for code you suspect is under-tested, or for checks missing from the Verification Log (check CLAUDE.md for the test command)
-2. Run the **full suite once**, each command in the foreground with the Bash tool's `timeout: 600000` (full suites can take 5-10 minutes)
+2. Run the **full suite once**, each command in the foreground with the Bash tool's `timeout: 600000` (full suites can take 5-10 minutes). Send each command's full output to a file and read the result from the file: `<command> > /tmp/suite-{{taskId}}-1.log 2>&1; echo EXIT=$?`, then grep the file for the summary and failures (or `tail -60` it). Do NOT pipe the command itself through `tail` or `head`: when a coverage report or other output follows the summary, the summary is cut off and the whole suite has to run again
 3. Do NOT use `run_in_background`: nothing wakes you when a background command finishes, and ending your turn ends this review. If the suite times out after 10 minutes, run it in parts (for example one test directory per call), each in the foreground
 4. Do NOT re-run the full suite in the same review unless that run was broken by the environment (not by a test failure). Do NOT start parallel test runs, they compete for resources
 

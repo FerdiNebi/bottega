@@ -129,8 +129,11 @@ reviewer's job is to catch that.
   not actually done is a critical finding. Read the Verification Log: checks it
   records **at the current commit** count as evidence and are not re-run; checks
   that are missing, failed or logged at another commit, the reviewer runs
-  itself. Then it runs the **full suite once** (in the background) and every
-  manual scenario from the Testing Strategy.
+  itself. Then it runs the **full suite once** (in the foreground) and every
+  manual scenario from the Testing Strategy. Each suite command's output goes
+  to a file that the reviewer greps for the summary: piping the command through
+  `tail` can cut the summary off (a coverage report printed after it) and force
+  a second full run.
 - **Re-review (previous verdict NEEDS_WORK).** Scope is the previous findings
   plus the diff since the commit the last review recorded. Re-verify the items
   that review unchecked and any item whose files the diff touches; run the
