@@ -107,7 +107,7 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     label: 'Review',
     kind: 'prompt',
     file: 'review.md',
-    variables: ['taskDocPath', 'taskId'],
+    variables: ['taskDocPath', 'taskId', 'baseBranch'],
   },
   {
     name: 'refinement',

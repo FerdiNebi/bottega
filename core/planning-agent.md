@@ -77,6 +77,12 @@ end-to-end on its own. The plan must **not** contain items that require:
   owns all `git commit` / `push` / `gh pr create`;
 - external services or credentials the agent lacks.
 
+Nor does it schedule **the full suite** (all unit/integration tests, every E2E
+or browser project): the review agent runs that once on the finished commit
+([`execution-loop.md`](./execution-loop.md)). As a to-do item it would be run
+by the implementer too, on every implement turn. Targeted tests for the change
+are to-do items as usual, even if a project note asks for more.
+
 If a step can't be executed by the agent, leave it out — don't park it as an
 unchecked "for later" item, because unchecked items block the loop. **The plan
 ends when code and tests are done; the PR agent takes it from there.**

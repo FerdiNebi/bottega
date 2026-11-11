@@ -14,6 +14,10 @@ branch after the merge, starts with it loaded.
 > Each task used to rediscover the codebase from scratch and repeat the same
 > mistakes: the wrong test command, a missing generate step, a port clash. Now
 > the pipeline keeps a running project notebook, and each task reads it.
+>
+> An append-only notebook has its own cost: in one project the managed section
+> grew from 11 KB to 162 KB in twelve days, and every turn of every agent paid
+> for it. Hence the budgets and the topic notes below.
 
 ## Why it's an extra (not core)
 
@@ -60,27 +64,55 @@ providers whose transcripts are not in the Claude format still get the run list.
 
 ## What it writes
 
-Only the **managed section** of `CLAUDE.md` at the worktree root, between
-`<!-- bottega:learnings:start -->` and `<!-- bottega:learnings:end -->`. If the
-markers are missing it appends them (creating `CLAUDE.md` if needed); text
-outside them is never edited. The section has three parts:
+The project knowledge lives in two places, both owned by Bottega:
 
-- **Codebase map** — where things live, the modules and conventions a new task
-  needs to find its way.
+- The **managed section** of `CLAUDE.md` at the worktree root, between
+  `<!-- bottega:learnings:start -->` and `<!-- bottega:learnings:end -->`.
+  Every agent loads it at the start of every session, so it is the **index**:
+  short and cross-cutting. If the markers are missing it appends them (creating
+  `CLAUDE.md` if needed); text outside them is never edited.
+- **Topic notes** under `docs/agent-notes/` (one Markdown file per area, e.g.
+  `e2e-testing.md`, `menus.md`). They hold the detail and are read only by the
+  tasks that need them, so detail costs nothing for a task that never opens
+  the file.
+
+The managed section has four parts:
+
+- **Codebase map** — one line per area: where it lives and its key
+  conventions, with a pointer to the area's topic note if it has one.
 - **Commands & testing** — exact commands that work: setup, generate steps,
   running a single package's tests, the full suite, what CI runs.
-- **Pitfalls & lessons** — what went wrong and what to do instead.
+- **Pitfalls & lessons** — cross-cutting ones only: what went wrong and what
+  to do instead. Area-specific pitfalls go in the area's note.
+- **Topic notes** — one line per note: its path and when to read it ("before
+  writing or running E2E tests, read `docs/agent-notes/e2e-testing.md`").
 
-It **curates rather than appends**: it merges new facts into existing bullets,
-corrects or removes bullets this task proved wrong, never keeps a per-task log
-(no task numbers or dates), and keeps the section under about 150 lines. A
-lesson goes in only if it would save a future task time and was seen in the
-diff, the digest or the repo, not guessed. Facts about one machine (local
-paths, its OS quirks) stay out; they are not true for everyone using the repo.
-If nothing new was learned, it changes nothing.
+**Budgets.** The managed section stays under **12,000 characters** (about 3k
+tokens) and each topic note under **25,000**. The agent measures them
+(`wc -c`) before it finishes. Lines count less than characters: a single
+bullet can hold a paragraph.
 
-It commits the `CLAUDE.md` change itself (`Update project knowledge in
-CLAUDE.md`), touches no other file, asks no questions, and runs no completion
+It **curates rather than appends**, on every run and over the whole body of
+notes, not only the part this task touched: it merges new facts into existing
+bullets, summarizes several related bullets into one, corrects or removes
+bullets this task proved wrong, moves area detail out of `CLAUDE.md` into a
+topic note (creating the note and its index line), and never keeps a per-task
+log (no task numbers or dates). When a budget is exceeded it consolidates
+until it fits, dropping the least useful detail last. A lesson goes in only if
+it would save a future task time and was seen in the diff, the digest or the
+repo, not guessed. Facts about one machine (local paths, its OS quirks) stay
+out; they are not true for everyone using the repo. If nothing new was learned
+and both budgets hold, it changes nothing.
+
+The notes never say **which pipeline stage runs which checks** ("run the full
+suite before READY", "review won't start until E2E is ticked"). Bottega's
+agent prompts own that split
+([`../core/execution-loop.md`](../core/execution-loop.md)); a note that
+overrides it makes every later task run the same suites again in each stage.
+How to run a check (commands, flags, setup, flaky specs) is fair game.
+
+It commits its change itself (`Update project knowledge`), touching only
+`CLAUDE.md` and `docs/agent-notes/`, asks no questions, and runs no completion
 script — completion is implicit and the loop chains to PR.
 
 ## What to build

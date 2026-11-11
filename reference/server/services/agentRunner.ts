@@ -104,7 +104,11 @@ export async function startAgentRun(
       message = await generateImplementationMessage(taskDocPath, taskId);
       break;
     case 'review':
-      message = await generateReviewMessage(taskDocPath, taskId);
+      message = await generateReviewMessage(
+        taskDocPath,
+        taskId,
+        await getBaseBranch(taskWithProject.repo_folder_path),
+      );
       break;
     case 'refinement':
       message = await generateRefinementMessage(taskDocPath, taskId);

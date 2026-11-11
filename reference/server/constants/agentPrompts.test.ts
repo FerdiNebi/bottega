@@ -10,6 +10,7 @@ import {
   generatePrAgentReviewMessage,
   generateLearningsMessage,
   generateReviewMessage,
+  generateImplementationMessage,
 } from './agentPrompts.js';
 import { saveOverride, deleteOverride, toPromptPath } from '../services/promptRenderer.js';
 
@@ -308,7 +309,7 @@ describe('PR procedure: rebase first, never wait on a conflicting PR', () => {
     for (const msg of [
       await generatePrAgentMessage('/t.md', 1, null, 'main'),
       await generateYoloMessage('/t.md', 1, null, 'main'),
-      await generateReviewMessage('/t.md', 1),
+      await generateReviewMessage('/t.md', 1, 'main'),
     ]) {
       expect(msg).not.toContain('TaskOutput');
       expect(msg).not.toContain('run_in_background: true');
@@ -337,12 +338,37 @@ describe('generateLearningsMessage', () => {
     expect(msg).toContain('git diff main...HEAD');
   });
 
-  it('limits the agent to the managed section of CLAUDE.md and a commit of that file', async () => {
+  it('limits the agent to the managed section of CLAUDE.md and its topic notes', async () => {
     const msg = await generateLearningsMessage('/t.md', 1, 'none', 'main');
     expect(msg).toContain('<!-- bottega:learnings:start -->');
     expect(msg).toContain('<!-- bottega:learnings:end -->');
     expect(msg).toContain('Never change text outside the markers');
-    expect(msg).toContain('git add CLAUDE.md && git commit -m "Update project knowledge in CLAUDE.md"');
+    expect(msg).toContain('git add CLAUDE.md docs/agent-notes && git commit -m "Update project knowledge"');
+  });
+
+  it('gives the notes a character budget and forbids rules about who runs which checks', async () => {
+    const msg = await generateLearningsMessage('/t.md', 1, 'none', 'main');
+    expect(msg).toContain('the managed section stays under 12,000 characters, each topic note under 25,000');
+    expect(msg).toContain('Never write rules about which pipeline stage runs which checks');
+    expect(msg).toContain('never `@` imports');
+  });
+});
+
+describe('full-suite ownership (core/execution-loop.md)', () => {
+  it('has the reviewer run every slow suite once, record the commands, and skip it when no code changed', async () => {
+    const msg = await generateReviewMessage('/t.md', 1, 'trunk');
+    expect(msg).toContain('plus any end-to-end or browser suites');
+    expect(msg).toContain('`git diff --name-only trunk...HEAD`');
+    expect(msg).toContain('**Full suite:** not needed (only <kinds of files> changed)');
+  });
+
+  it('keeps full-suite runs out of the plan and out of implementation', async () => {
+    expect(await generatePlanificationMessage('/t.md', 1)).toContain(
+      'Running the project\'s full test suite or every E2E/browser project',
+    );
+    expect(await generateImplementationMessage('/t.md', 1)).toContain(
+      'This instruction wins over any project note',
+    );
   });
 });
 
@@ -353,6 +379,14 @@ describe('local CI mode (extra/local-ci.md)', () => {
     await generatePrAgentCommentMessage('/t.md', 1, 'https://x/pr/1', { commentBody: 'fix' }, 'main', 'local'),
     await generatePrAgentReviewMessage('/t.md', 1, 'https://x/pr/1', { reviewBody: 'fix' }, 'main', 'local'),
   ];
+
+  it('reuses passes from before notes-only commits and skips suites when no code changed', async () => {
+    for (const msg of await local()) {
+      expect(msg).toContain('`**Full suite:**` line of Review Findings');
+      expect(msg).toContain('files under `docs/agent-notes/`');
+      expect(msg).toContain('`skipped (no code changed)`');
+    }
+  });
 
   it('runs the workflow steps locally instead of waiting on GitHub checks', async () => {
     for (const msg of await local()) {

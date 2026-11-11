@@ -13,7 +13,7 @@
 ## Verify As You Go
 - After each change, run the tests that cover the code you touched and the typecheck for that package. Fix failures before moving on.
 - Before you finish, run the fast checks the project's CI runs: look in `.github/workflows/` (or the CI config the project uses) and `package.json` scripts for the exact lint/format, typecheck and build commands, and run them the same way. Also run the tests of every package you changed.
-- Do NOT run the project's full test suite. The review agent runs it once on your commit.
+- Do NOT run the project's full test suite or its full E2E/browser suites. The review agent runs them once on your commit. This instruction wins over any project note (e.g. in `CLAUDE.md`) asking you to run them before READY.
 
 ## Commit Your Work
 When you are done with this turn, commit everything in the worktree so the review looks at a fixed commit:

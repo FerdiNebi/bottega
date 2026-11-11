@@ -6,9 +6,13 @@ This project uses **local CI**: GitHub runs CI only on the base branch after the
 - NEVER run deploy or publish work: skip workflows triggered by `workflow_run`, and anything that deploys, releases, publishes or pushes images, or needs a secret (`${{ secrets.* }}`).
 - If there is no CI config, run the test and build commands that `CLAUDE.md` or the package manifest names. If there are none, treat CI as PASSED.
 
-**2. Run them** one at a time, each in the foreground with the Bash tool's `timeout: 600000`. Do NOT use `run_in_background`: nothing wakes you when a background command finishes, and ending your turn ends this run. Never run two suites in parallel. If a step times out, split it (e.g. run the test suite in parts). A step whose pass at the current `HEAD` (`git rev-parse HEAD`) is recorded in the Verification Log of `{{taskDocPath}}` need not be re-run.
+**2. Run them** one at a time, each in the foreground with the Bash tool's `timeout: 600000`. Do NOT use `run_in_background`: nothing wakes you when a background command finishes, and ending your turn ends this run. Never run two suites in parallel. If a step times out, split it (e.g. run the test suite in parts).
 
-**3. Skips.** A step may be skipped ONLY when its tool or service cannot be provided on this machine (e.g. no Docker for an image build, the Playwright browser cannot be installed). Record the reason; GitHub CI on `{{baseBranch}}` will still run it. A step that ran and failed is a failure, never a skip.
+**Reuse earlier passes.** `{{taskDocPath}}` records passes in two places: the Verification Log (implementer) and the `**Full suite:**` line of Review Findings (reviewer, with its commands). A step whose same command passed there need not be re-run if that pass was at the current `HEAD` (`git rev-parse HEAD`), or at an earlier commit and `git diff --name-only <that commit> HEAD` lists only `CLAUDE.md`, files under `docs/agent-notes/`, or other Markdown files no build or test reads. The refinement and learnings commits after the review are usually like that. List each reused step in your report as `passed at <sha> (reused)`. If you rebased onto new commits from `{{baseBranch}}`, earlier passes no longer count.
+
+**3. Skips.** A step may be skipped for two reasons ONLY:
+- Its tool or service cannot be provided on this machine (e.g. no Docker for an image build, the Playwright browser cannot be installed). Record the reason; GitHub CI on `{{baseBranch}}` will still run it.
+- Nothing it tests changed: `git diff --name-only {{baseBranch}}...HEAD` lists only Markdown docs, `CLAUDE.md`, `docs/agent-notes/` or CI workflow files. Then skip test-suite and build steps as `skipped (no code changed)`. Still run the cheap steps (install, lint, typecheck), and check that a changed workflow parses and that the scripts and commands it names exist. A step that ran and failed is a failure, never a skip.
 
 **4. Handle the result.**
 

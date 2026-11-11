@@ -112,8 +112,12 @@ export async function generateImplementationMessage(
   return renderPrompt('implementation', { taskDocPath, taskId });
 }
 
-export async function generateReviewMessage(taskDocPath: string, taskId: number): Promise<string> {
-  return renderPrompt('review', { taskDocPath, taskId });
+export async function generateReviewMessage(
+  taskDocPath: string,
+  taskId: number,
+  baseBranch: string,
+): Promise<string> {
+  return renderPrompt('review', { taskDocPath, taskId, baseBranch });
 }
 
 export async function generateRefinementMessage(

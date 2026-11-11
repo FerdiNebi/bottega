@@ -51,15 +51,30 @@ The local CI step:
    `workflow_run`, deploy, release, publish or push images, and any step that
    needs a secret.
 4. **Run each step in the foreground**, each with the Bash tool's 10-minute
-   timeout, never in the background, one at a time. A step that records a pass
-   at the current `HEAD` in the task doc's Verification Log need not be re-run.
+   timeout, never in the background, one at a time. A step need not be re-run
+   if the task doc records a pass of the same command — in the implementer's
+   Verification Log or the reviewer's `**Full suite:**` line — at a commit
+   *equivalent* to `HEAD`: `HEAD` itself, or an earlier commit when every file
+   changed since (`git diff --name-only <that commit> HEAD`) is `CLAUDE.md`,
+   under `docs/agent-notes/`, or another Markdown file no build or test reads.
+   This is the normal case: the refinement and learnings stages commit after
+   the review, and their commits are mostly notes, so without it the PR step
+   re-ran the reviewer's whole suite. A rebase that brought in commits from the
+   base branch is not equivalent; those steps run again.
 5. **Fix failures** in the worktree, commit and push, then re-run from the
    failed step. This is bounded at 10 fix iterations, as in GitHub mode.
-6. **Skips are allowed only for missing infrastructure.** A step whose tool or
-   service cannot be provided on this machine (no Docker for an image build, no
-   browser for an end-to-end suite) is recorded as skipped with the reason. It
-   is not a failure: the default branch's hosted CI still runs it after the
-   merge. A step that ran and failed is never "skipped".
+6. **Skips are allowed for two reasons only.**
+   - *Missing infrastructure:* a step whose tool or service cannot be provided
+     on this machine (no Docker for an image build, no browser for an
+     end-to-end suite) is recorded as skipped with the reason. It is not a
+     failure: the default branch's hosted CI still runs it after the merge.
+   - *Nothing it tests changed:* when the branch's diff against the base
+     touches only Markdown docs, `CLAUDE.md` and its notes, or the CI workflow
+     files themselves, test-suite and build steps are recorded as `skipped (no
+     code changed)`. The cheap steps still run, and a changed workflow is
+     checked for what it can break (it parses, the scripts it names exist).
+
+   A step that ran and failed is never "skipped".
 7. **Report.** Post one PR comment (`gh pr comment`) with the head SHA and
    every step's result (passed / skipped + reason). Then go on to the conflict
    check. A conflict rebase changes `HEAD`, so it re-runs the local CI step.
