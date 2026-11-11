@@ -137,7 +137,7 @@ Based on your findings from steps 2-4, determine if the feature is **READY**, **
 - All unit tests pass
 - All manual testing scenarios pass
 - No implementation issues found
-- ALL To-Do items (Implementation and Testing) are marked complete [x]
+- ALL To-Do items (every section) are marked complete [x]
 
 **NEEDS_WORK** - Any of the following:
 - Any checked To-Do item failed verification in Step 2

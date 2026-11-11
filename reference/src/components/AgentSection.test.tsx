@@ -696,3 +696,33 @@ describe('AgentSection', () => {
     });
   });
 });
+
+describe('AgentSection phase label', () => {
+  const props = { agentRuns: [], isLoading: false, onRunAgent: vi.fn(), onResumeAgent: vi.fn() };
+
+  it('shows the phase of the latest implementation run', () => {
+    render(
+      <AgentSection
+        {...props}
+        agentRuns={[
+          { id: 1, agent_type: 'implementation', status: 'completed', conversation_id: 11, phase: 1, phase_count: 3 },
+          { id: 2, agent_type: 'implementation', status: 'running', conversation_id: 12, phase: 2, phase_count: 3 },
+        ] as unknown as AgentRunRow[]}
+      />,
+    );
+
+    expect(screen.getByTestId('step-phase-implementation').textContent).toBe('Phase 2 of 3');
+  });
+
+  it('keeps the description for an unphased run', () => {
+    render(
+      <AgentSection
+        {...props}
+        agentRuns={[{ id: 1, agent_type: 'implementation', status: 'completed', conversation_id: 11 }] as unknown as AgentRunRow[]}
+      />,
+    );
+
+    expect(screen.queryByTestId('step-phase-implementation')).toBeNull();
+    expect(screen.getByText('Implement the next phase from the plan')).toBeInTheDocument();
+  });
+});

@@ -23,7 +23,7 @@ You will spawn a planning sub-agent to explore the codebase, then YOU (the maste
 
 ### Step 1: Explore (sub-agent)
 
-Spawn a planning sub-agent (Task tool, subagent_type=Plan) to explore the codebase. The sub-agent's ONLY job is research — it must NOT write files, run scripts, or ask user questions.
+Spawn a planning sub-agent (Task tool, subagent_type=Plan, model: "sonnet") to explore the codebase. Always pass `model: "sonnet"`: research is mostly reading files and grep output, and a sub-agent otherwise inherits your (more expensive) model. The sub-agent's ONLY job is research — it must NOT write files, run scripts, or ask user questions.
 
 Prompt it with:
 - What to investigate (relevant services, models, tests, patterns)
@@ -60,6 +60,8 @@ Do NOT delegate file writing to a sub-agent.
 
 The plan must follow every section in the template at @{{planTemplatePath}}, in the same order, with no sections removed. Add new sections only if the work genuinely requires them. In particular:
 - The `## Original Request` section must quote, verbatim, the pre-existing content of `{{taskDocPath}}` as you read it before this step (plus the task title if the doc was empty). Read the file BEFORE writing — once you Write, the original content is gone.
+- The `## To-Do List` has one `### Phase N: <title>` section per Implementation Plan phase, numbered and titled the same, each with that phase's code and test items. Each phase runs in its own fresh implementation session, and a session gets more expensive with every turn (each turn re-sends the whole conversation), so split early: use **one phase only** for a small change (at most ~6 To-Do items touching one or two layers). Anything bigger gets two or more phases, each a coherent chunk that can be finished, tested and committed on its own (e.g. data + server logic, then UI, then end-to-end tests + docs).
+- Leave the `## Progress Log` section empty; implementation runs fill it in.
 - The `## Relevant Notes` section lists every topic note the explore step found to apply (path and one line on why), or "None". The implementation and review agents read only the notes listed there.
 - The Overview must surface the **key technical decisions** you made silently (the user can't review them, so list them so future-you and reviewers can audit them).
 - The Testing Strategy must be the strategy you chose (unit tests / Playwright MCP / why not E2E if not needed). Do not leave it blank or punt it to the user.

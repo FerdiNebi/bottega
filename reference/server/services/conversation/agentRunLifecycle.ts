@@ -16,7 +16,10 @@ import { tasksDb, agentRunsDb, userDb, testSlotsDb } from '../../database/db.js'
 import { worktreeExists } from '../worktree.js';
 import { isAutopilotProject } from '../autopilotFlag.js';
 import { notifyClaudeComplete } from '../notifications.js';
+import { readTaskDoc } from '../documentation.js';
+import { phaseToContinue } from '../taskPhases.js';
 import type { StreamingContext } from './types.js';
+import type { AgentRunRow } from '../../database/db.js';
 import type { AgentType } from '@shared/websocket/messages';
 
 // Maximum number of agent iterations before auto-blocking (prevents infinite loops).
@@ -106,7 +109,7 @@ export function buildAgentRunCompletionHandler(
     }
 
     if (shouldChain && linkedAgentRun) {
-      await handleAgentChaining(taskId, linkedAgentRun.agent_type, ctx);
+      await handleAgentChaining(taskId, linkedAgentRun.agent_type, ctx, linkedAgentRun);
     } else if (endedNormally && linkedAgentRun) {
       // PR and yolo are terminal in core; under autopilot they lead to the
       // merge and the next task.
@@ -156,6 +159,7 @@ async function handleAgentChaining(
   taskId: number,
   agentType: AgentType,
   context: StreamingContext,
+  finishedRun?: AgentRunRow,
 ): Promise<void> {
   const { broadcastFn, broadcastToTaskSubscribersFn, userId } = context;
   const task = tasksDb.getById(taskId);
@@ -301,7 +305,21 @@ async function handleAgentChaining(
     return;
   }
 
-  const nextType: AgentType = agentType === 'implementation' ? 'review' : 'implementation';
+  let nextType: AgentType = agentType === 'implementation' ? 'review' : 'implementation';
+  // Phased plan (core/execution-loop.md): an implementation run that finished
+  // its phase while a later phase has unchecked items hands over to a fresh
+  // implementation run for that phase instead of review.
+  let phaseContinuation = false;
+  if (agentType === 'implementation' && task && finishedRun?.phase != null) {
+    const next = phaseToContinue(readTaskDoc(task.project_id, taskId), finishedRun.phase);
+    if (next) {
+      nextType = 'implementation';
+      phaseContinuation = true;
+      console.log(
+        `[ConversationAdapter] Task ${taskId} finished phase ${finishedRun.phase}; starting phase ${next.number} in a fresh run`,
+      );
+    }
+  }
   console.log(`[ConversationAdapter] Chaining ${agentType} -> ${nextType} for task ${taskId}`);
 
   const { startAgentRun, getRunningAgentForTask } = await import('../agentRunner.js');
@@ -324,7 +342,12 @@ async function handleAgentChaining(
         return;
       }
 
-      await startAgentRun(taskId, nextType, { broadcastFn, broadcastToTaskSubscribersFn, userId });
+      await startAgentRun(taskId, nextType, {
+        broadcastFn,
+        broadcastToTaskSubscribersFn,
+        userId,
+        ...(phaseContinuation ? { phaseContinuation: true } : {}),
+      });
     } catch (err) {
       // Loud log and stop. We used to also INSERT a placeholder 'failed' run
       // for the agent type we couldn't start — but that creates a sibling

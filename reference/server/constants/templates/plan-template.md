@@ -53,13 +53,29 @@ not loaded otherwise. Write "None" if the project has no such index or no note a
 
 ## To-Do List
 
-### Implementation
-- [ ] {{ implementation step 1 }}
-- [ ] {{ implementation step 2 }}
+<!--
+One "### Phase N: <title>" section per Implementation Plan phase, numbered and titled the
+same. Each phase holds its own code AND test items, so a finished phase is a tested one.
+Implementation runs one phase per fresh session (the context stays small, which keeps each
+run cheap): make every phase a coherent chunk that can be finished and committed on its own.
+Use a single phase only for a small change (at most ~6 items, one or two layers); split
+anything bigger. Put manual / Playwright checks in the last phase.
+-->
 
-### Testing
-- [ ] {{ unit tests }}
-- [ ] {{ manual testing }}
+### Phase 1: {{ phase title }}
+- [ ] {{ implementation step }}
+- [ ] {{ tests for this phase }}
+
+### Phase 2: {{ phase title }}
+- [ ] {{ implementation step }}
+- [ ] {{ tests for this phase }}
+
+## Progress Log
+
+<!--
+Leave empty. Each implementation run appends an entry here when it finishes a phase:
+its commit, what it did, and what the next phase needs to know.
+-->
 
 ## Project Docs Update
 

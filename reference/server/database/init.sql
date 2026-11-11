@@ -135,6 +135,10 @@ CREATE TABLE IF NOT EXISTS task_agent_runs (
     provider TEXT NOT NULL DEFAULT 'anthropic',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     completed_at DATETIME,
+    -- Implementation runs of a phased plan: the phase this run was scoped to
+    -- and how many phases the plan had then. NULL for every other run.
+    phase INTEGER DEFAULT NULL,
+    phase_count INTEGER DEFAULT NULL,
     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
 );

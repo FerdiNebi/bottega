@@ -186,7 +186,7 @@ describe('promptRenderer', () => {
 
   describe('renderPrompt', () => {
     it('loads and renders the implementation prompt', () => {
-      const out = renderPrompt('implementation', { taskDocPath: '/x/y.md', taskId: 7 });
+      const out = renderPrompt('implementation', { taskDocPath: '/x/y.md', taskId: 7, phaseBlock: '' });
       expect(out).toContain('/x/y.md');
       expect(out).toContain('Start implementing now.');
     });

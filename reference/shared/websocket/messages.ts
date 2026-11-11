@@ -58,6 +58,9 @@ export interface AgentRunSummary {
   status: AgentRunStatus;
   agent_type: AgentType;
   conversation_id: ConversationId | null;
+  /** Phased implementation runs: the plan phase and phase count. */
+  phase?: number | undefined;
+  phase_count?: number | undefined;
 }
 
 export interface ClaudeStatusPayload {

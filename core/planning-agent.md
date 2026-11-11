@@ -41,8 +41,12 @@ written, the original is gone.)
 1. **Explore (research sub-agent).** Spawn a read-only sub-agent to map the
    relevant code and return files with line numbers, the current architecture,
    dependencies, and any ambiguities. It must not write files, run scripts, or
-   ask questions — research only. (If your harness has no sub-agents, the agent
-   explores directly; the constraint that exploration is read-only still holds.)
+   ask questions — research only. Run it on a cheaper model than the planner
+   (the reference passes `model: "sonnet"`): it is mostly reading files, and a
+   sub-agent otherwise inherits the planner's model. On task 281 the research
+   sub-agent was 33 Opus turns and nearly all of the planning cost. (If your
+   harness has no sub-agents, the agent explores directly; the constraint that
+   exploration is read-only still holds.)
 2. **Clarify (the agent itself).** Ask the user questions **only** for genuine
    ambiguity with real trade-offs (e.g. "JWT or sessions?"), not for things with
    an obvious answer. Always propose and confirm a **testing strategy**. Make
@@ -68,7 +72,17 @@ The plan must follow a fixed structure
   modify/create and what changes.
 - **Testing Strategy** — unit tests and manual/Playwright scenarios (or an
   explicit "not needed because …").
-- **To-Do List** — `Implementation` and `Testing` checkboxes.
+- **To-Do List** — one `### Phase N: <title>` section per Implementation Plan
+  phase, each holding that phase's code **and** test checkboxes, so finishing a
+  phase means its tests pass too. The execution loop runs one fresh
+  implementation run per phase (see
+  [`execution-loop.md`](./execution-loop.md#one-implementation-run-per-plan-phase)),
+  so make each phase a coherent chunk that can be finished and committed on its
+  own, sized for one focused run. Only a small change (at most ~6 items across
+  one or two layers) is a single phase; split anything bigger, since a run gets
+  more expensive with every turn.
+- **Progress Log** — empty at planning time; each phase run appends what it
+  finished, its commit, and notes for the next phase.
 - **Project Docs Update** — doc changes needed, or "Not needed."
 
 ### The critical rule: every to-do item is agent-executable

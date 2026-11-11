@@ -168,6 +168,11 @@ export interface AgentRunRow {
   provider: Provider;
   created_at: string;
   completed_at: string | null;
+  // Implementation runs of a phased plan: the phase the run was scoped to
+  // and the plan's phase count at the time. Null for every other run.
+  // Optional: rows built in memory (agentRunsDb.create) don't carry them.
+  phase?: number | null | undefined;
+  phase_count?: number | null | undefined;
   // Estimated spend of the run's conversation in USD. Joined in by list
   // queries (not a column); absent or null when unknown.
   cost_usd?: number | null | undefined;

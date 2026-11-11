@@ -252,7 +252,16 @@ function AgentSection({
                       </span>
                     )}
                   </p>
-                  <p className="text-xs text-muted-foreground">{agent.description}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {agentRun?.phase && agentRun.phase_count ? (
+                      <span data-testid={`step-phase-${agent.type}`}>
+                        Phase {agentRun.phase} of {agentRun.phase_count}
+                        {isCompleted ? ' done' : isFailed ? ' stopped' : ''}
+                      </span>
+                    ) : (
+                      agent.description
+                    )}
+                  </p>
                 </div>
               </div>
 

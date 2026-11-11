@@ -1,14 +1,16 @@
 @agent-Implement Read the task documentation at `{{taskDocPath}}` and implement the unchecked items from the To-Do List.
+{{phaseBlock}}
 
 ## Instructions
 1. Read the task documentation file, then every note listed in its `## Relevant Notes` section. If you end up touching an area whose note (per the "Topic notes" index in `CLAUDE.md`) is not listed, read that note too before changing it
-2. Check if a "Review Findings" section exists
+2. If the doc has a `## Progress Log`, read it: earlier runs recorded what they finished, their commits, and what you need to know
+3. Check if a "Review Findings" section exists
    - If it does, pay special attention to documented issues
    - Address any issues from the previous review first
-3. Find the To-Do List section and implement unchecked items following the plan
-4. Verify as you go (see below) and fix failures now, while you still know why you made each change
-5. Mark each item as completed ([x]) when done
-6. Do NOT ask any questions - proceed directly with implementation
+4. Find the To-Do List section and implement unchecked items following the plan
+5. Verify as you go (see below) and fix failures now, while you still know why you made each change
+6. Mark each item as completed ([x]) when done
+7. Do NOT ask any questions - proceed directly with implementation
 
 ## Verify As You Go
 - After each change, run the tests that cover the code you touched and the typecheck for that package. Fix failures before moving on.
@@ -40,6 +42,6 @@ After committing, write a `## Verification Log` section in the task doc. If one 
 List only commands you ran at that commit; the reviewer trusts these results instead of re-running them. Record failures you could not fix honestly; do not hide them.
 
 ## Workflow Completion
-After implementing, check if ALL To-Do items (both Implementation and Testing sections) are now marked as complete [x].
+After implementing, check whether ALL To-Do items (every section) are now marked complete [x]. The loop starts the next phase or the review on its own; you run no completion script.
 
 Start implementing now.

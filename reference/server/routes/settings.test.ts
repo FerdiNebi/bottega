@@ -76,7 +76,7 @@ describe('Settings Routes - /api/settings/prompts', () => {
       expect(res.body.name).toBe('implementation');
       expect(res.body.content).toContain('@agent-Implement');
       expect(res.body.defaultContent).toContain('@agent-Implement');
-      expect(res.body.variables).toEqual(['taskDocPath', 'taskId']);
+      expect(res.body.variables).toEqual(['taskDocPath', 'taskId', 'phaseBlock']);
       expect(res.body.isCustomized).toBe(false);
       expect(res.body.mtime).toBeNull();
     });

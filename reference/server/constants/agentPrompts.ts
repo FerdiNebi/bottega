@@ -105,11 +105,27 @@ export async function generatePlanificationMessage(
   return renderPrompt(promptName, { taskDocPath, taskId, planTemplatePath });
 }
 
+/** The plan phase an implementation run is scoped to (core/execution-loop.md). */
+export interface ImplementationPhase {
+  number: number;
+  count: number;
+  title: string;
+}
+
 export async function generateImplementationMessage(
   taskDocPath: string,
   taskId: number,
+  phase: ImplementationPhase | null = null,
 ): Promise<string> {
-  return renderPrompt('implementation', { taskDocPath, taskId });
+  const phaseBlock = phase
+    ? '\n' +
+      renderPrompt('implementation-phase', {
+        phaseNumber: phase.number,
+        phaseCount: phase.count,
+        phaseTitle: phase.title,
+      })
+    : '';
+  return renderPrompt('implementation', { taskDocPath, taskId, phaseBlock });
 }
 
 export async function generateReviewMessage(
