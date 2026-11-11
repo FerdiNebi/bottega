@@ -7,8 +7,9 @@
  */
 
 import React, { useMemo } from 'react';
-import { MessageSquare, FileText, Pencil, GitBranch, Trash2, Flag } from 'lucide-react';
+import { MessageSquare, FileText, Pencil, GitBranch, Trash2, Flag, CircleDollarSign } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { formatCost } from '../../utils/formatCost';
 import type { TaskRow } from '../../../shared/types/db';
 import { isMilestoneTitle } from '../../../shared/milestones';
 
@@ -77,6 +78,7 @@ function BoardTaskCard({
 }: BoardTaskCardProps) {
   // Extract preview text from documentation
   const preview = useMemo(() => extractPreview(docPreview), [docPreview]);
+  const cost = formatCost(task.cost_usd);
 
   const handleEditClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
@@ -175,6 +177,18 @@ function BoardTaskCard({
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <MessageSquare className="w-3 h-3" />
             <span>{conversationCount} conversation{conversationCount !== 1 ? 's' : ''}</span>
+          </div>
+        )}
+
+        {/* Estimated cost of all the task's conversations */}
+        {cost && (
+          <div
+            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            title="Estimated cost of all this task's conversations"
+            data-testid={`task-cost-${task.id}`}
+          >
+            <CircleDollarSign className="w-3 h-3" />
+            <span>{cost}</span>
           </div>
         )}
 

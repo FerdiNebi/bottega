@@ -64,7 +64,7 @@ export interface PromptConcurrentEditError {
 // ---- App settings (global key/value) -------------------------------------
 //
 // Keys are constrained to the allow-list defined in `appSettings.js`
-// (`internal_tool_name`, `github_pr_trigger`). The response merges any
+// (`internal_tool_name`, `github_pr_trigger`, `implementation_max_turns`). The response merges any
 // stored values with `APP_SETTINGS_DEFAULTS`, so consumers always see a
 // fully-populated shape. Per-agent provider/model/effort is NOT here — it
 // moved to per-user storage (`/api/user-agent-model-settings`).
@@ -72,6 +72,8 @@ export interface PromptConcurrentEditError {
 export interface AppSettings {
   internal_tool_name: string;
   github_pr_trigger: string;
+  /** Turn budget of an implementation run, as a decimal string; '0' = no cap. */
+  implementation_max_turns: string;
 }
 
 export type GetAppSettingsResponse = AppSettings;
@@ -113,3 +115,4 @@ export interface ListCommandsResponse {
 
 expectType<keyof AppSettings>('internal_tool_name');
 expectType<keyof AppSettings>('github_pr_trigger');
+expectType<keyof AppSettings>('implementation_max_turns');

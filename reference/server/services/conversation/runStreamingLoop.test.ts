@@ -550,3 +550,54 @@ describe('runStreamingLoop usage limit', () => {
     expect(usageLimit).toEqual({ resetsAt: null });
   });
 });
+
+describe('runStreamingLoop turn limit', () => {
+  const tracker = () => ({ onAssistant: vi.fn(), onResult: vi.fn().mockResolvedValue(undefined) });
+  const acc = () => ({ patchAssistantMessage: vi.fn() });
+
+  it('flags maxTurnsHit on an error_max_turns result', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = await runStreamingLoop({
+      queryInstance: asyncIterableOf([
+        { type: 'result', subtype: 'error_max_turns', session_id: 'sess', is_error: true, modelUsage: {} },
+      ]) as never,
+      conversationId: 1,
+      thinkingAcc: acc() as never,
+      contextUsageTracker: tracker(),
+      initialSessionId: 'sess',
+    });
+
+    expect(result.maxTurnsHit).toBe(true);
+  });
+
+  it("reports the result's cumulative cost through onCost, skipping results without one", async () => {
+    const onCost = vi.fn();
+    await runStreamingLoop({
+      queryInstance: asyncIterableOf([
+        { type: 'assistant', session_id: 'sess', message: { id: 'm1' }, total_cost_usd: 99 },
+        { type: 'result', subtype: 'success', session_id: 'sess', total_cost_usd: 0, modelUsage: {} },
+        { type: 'result', subtype: 'success', session_id: 'sess', total_cost_usd: 1.75, modelUsage: {} },
+      ]) as never,
+      conversationId: 1,
+      thinkingAcc: acc() as never,
+      contextUsageTracker: tracker(),
+      initialSessionId: 'sess',
+      onCost,
+    });
+
+    expect(onCost).toHaveBeenCalledTimes(1);
+    expect(onCost).toHaveBeenCalledWith(1.75);
+  });
+
+  it('does not flag maxTurnsHit on a normal result', async () => {
+    const result = await runStreamingLoop({
+      queryInstance: asyncIterableOf([{ type: 'result', subtype: 'success', session_id: 'sess', modelUsage: {} }]) as never,
+      conversationId: 1,
+      thinkingAcc: acc() as never,
+      contextUsageTracker: tracker(),
+      initialSessionId: 'sess',
+    });
+
+    expect(result.maxTurnsHit).toBe(false);
+  });
+});

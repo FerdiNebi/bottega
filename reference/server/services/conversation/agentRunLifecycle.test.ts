@@ -452,6 +452,15 @@ describe('autopilot hooks (extra/autopilot.md)', () => {
     expect(onAutopilotLoopStopped).toHaveBeenCalledWith(7, 'the implementation run was stopped.');
   });
 
+  it('uses the stop reason Bottega recorded when it stopped the run', async () => {
+    runs('implementation', 'failed');
+    const c = { ...ctx(), stopReason: 'the implementation run hit its 150-turn limit.' };
+
+    await buildAgentRunCompletionHandler(c)();
+
+    expect(onAutopilotLoopStopped).toHaveBeenCalledWith(7, 'the implementation run hit its 150-turn limit.');
+  });
+
   it('leaves the autopilot message alone when the run paused on the usage limit', async () => {
     runs('implementation', 'failed');
     vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, project_id: 3, usage_limit_resume_at: '2026-11-03T19:22:00.000Z' } as never);

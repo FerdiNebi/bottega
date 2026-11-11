@@ -9,9 +9,22 @@ vi.mock('lucide-react', () => ({
   Flag: () => <span data-testid="icon-flag" />,
   FileText: () => <span data-testid="icon-file-text" />,
   Pencil: () => <span data-testid="icon-pencil" />,
+  CircleDollarSign: () => <span data-testid="icon-dollar" />,
 }));
 
 const asTask = <T extends Partial<TaskRow>>(t: T): TaskRow => t as unknown as TaskRow;
+
+describe('BoardTaskCard cost', () => {
+  it("shows the task's estimated cost", () => {
+    render(<BoardTaskCard task={asTask({ id: 4, title: 'Costly', cost_usd: 12.345 })} />);
+    expect(screen.getByTestId('task-cost-4').textContent).toBe('$12.35');
+  });
+
+  it('shows no cost when none is known', () => {
+    render(<BoardTaskCard task={asTask({ id: 5, title: 'Free', cost_usd: null })} />);
+    expect(screen.queryByTestId('task-cost-5')).not.toBeInTheDocument();
+  });
+});
 
 describe('BoardTaskCard Component', () => {
   const mockTask = asTask({

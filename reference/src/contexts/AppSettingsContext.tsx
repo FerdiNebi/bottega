@@ -17,12 +17,15 @@ import type {
 const DEFAULTS: AppSettings = {
   internal_tool_name: 'Bottega',
   github_pr_trigger: 'bottega',
+  implementation_max_turns: '150',
 };
 
 export interface AppSettingsContextValue {
   isLoaded: boolean;
   internalToolName: string;
   githubPrTrigger: string;
+  /** Turn budget of an implementation run; 0 = no cap. */
+  implementationMaxTurns: number;
   refresh: () => Promise<void>;
 }
 
@@ -70,6 +73,7 @@ export const AppSettingsProvider = ({ children }: { children: ReactNode }) => {
     isLoaded,
     internalToolName: settings.internal_tool_name,
     githubPrTrigger: settings.github_pr_trigger,
+    implementationMaxTurns: Number(settings.implementation_max_turns) || 0,
     refresh,
   };
 

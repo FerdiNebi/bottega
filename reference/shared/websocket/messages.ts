@@ -216,6 +216,15 @@ export type ServerToClientMessage =
       taskId: TaskId;
       reason: string;
     }
+  // A turn's result updated a conversation's estimated cost (USD). Carries
+  // the conversation's new total and the task's new total.
+  | {
+      type: 'task-cost-updated';
+      taskId: TaskId;
+      conversationId: ConversationId;
+      conversationCostUsd: number;
+      taskCostUsd: number;
+    }
   // Parallel-runs extra: the task waits out a usage limit (resumeAt = null
   // once the pause is over or cancelled).
   | {

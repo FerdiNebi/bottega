@@ -81,10 +81,28 @@ function rejectedResetsAt(msg: SDKIteratorMessage): number | null {
   return info.resetsAt < 1e12 ? info.resetsAt * 1000 : info.resetsAt;
 }
 
+/**
+ * `total_cost_usd` of an SDK `result` message, when it carries a positive one.
+ * Cumulative for the session (across resumes), so callers store it rather
+ * than add it up.
+ */
+export function resultCostUsd(msg: SDKIteratorMessage): number | null {
+  if (msg.type !== 'result') return null;
+  const cost = msg['total_cost_usd'];
+  return typeof cost === 'number' && Number.isFinite(cost) && cost > 0 ? cost : null;
+}
+
+/** The turn ended because it spent its `maxTurns` budget (SDK result subtype). */
+function isMaxTurnsResult(msg: SDKIteratorMessage): boolean {
+  return msg.type === 'result' && msg.subtype === 'error_max_turns';
+}
+
 export interface StreamingLoopOutcome {
   claudeSessionId: string | null;
   authError: boolean;
   usageLimit: UsageLimitHit | null;
+  /** The turn stopped on its `maxTurns` budget rather than finishing. */
+  maxTurnsHit: boolean;
 }
 
 export interface RunStreamingLoopParams {
@@ -110,6 +128,8 @@ export interface RunStreamingLoopParams {
    * completed, chaining) still runs.
    */
   onResult?: (() => void) | undefined;
+  /** Fires with the session's cumulative `total_cost_usd` when a result carries one. */
+  onCost?: ((totalCostUsd: number) => void) | undefined;
 }
 
 export async function runStreamingLoop({
@@ -122,6 +142,7 @@ export async function runStreamingLoop({
   onSessionId,
   broadcastClaudeStatus = false,
   onResult,
+  onCost,
 }: RunStreamingLoopParams): Promise<StreamingLoopOutcome> {
   let claudeSessionId: string | null = initialSessionId;
   let firstSessionIdSeen = initialSessionId !== null;
@@ -129,6 +150,7 @@ export async function runStreamingLoop({
   let resultObserved = false;
   let authError = false;
   let usageLimit: UsageLimitHit | null = null;
+  let maxTurnsHit = false;
   let limitResetsAt: number | null = null;
 
   try {
@@ -145,6 +167,16 @@ export async function runStreamingLoop({
         console.warn(
           `[ConversationAdapter] Usage limit hit on conversation ${conversationId} (resets ${limitResetsAt ? new Date(limitResetsAt).toISOString() : 'unknown'})`,
         );
+      }
+
+      const costUsd = resultCostUsd(sdkMessage);
+      if (costUsd !== null) {
+        onCost?.(costUsd);
+      }
+
+      if (isMaxTurnsResult(sdkMessage)) {
+        maxTurnsHit = true;
+        console.warn(`[ConversationAdapter] Turn limit hit on conversation ${conversationId}`);
       }
 
       if (sdkMessage.type === 'stream_event') {
@@ -260,10 +292,10 @@ export async function runStreamingLoop({
       console.log(
         `[ConversationAdapter] iterator threw after result for session ${claudeSessionId} — treating as clean turn end (${(error as Error).message ?? error})`,
       );
-      return { claudeSessionId, authError, usageLimit };
+      return { claudeSessionId, authError, usageLimit, maxTurnsHit };
     }
     throw error;
   }
 
-  return { claudeSessionId, authError, usageLimit };
+  return { claudeSessionId, authError, usageLimit, maxTurnsHit };
 }

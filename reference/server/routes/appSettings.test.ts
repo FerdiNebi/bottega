@@ -59,6 +59,24 @@ describe('PUT /api/app-settings', () => {
     expect(appSettingsDb.setValue).toHaveBeenCalledWith('github_pr_trigger', 'mybot');
   });
 
+  it('accepts implementation_max_turns as a whole number, including 0 (no cap)', async () => {
+    for (const turns of ['80', ' 0 ', '10000']) {
+      const res = await request(app).put('/api/app-settings').send({ implementation_max_turns: turns });
+      expect(res.status).toBe(200);
+    }
+    expect(appSettingsDb.setValue).toHaveBeenCalledWith('implementation_max_turns', '80');
+    expect(appSettingsDb.setValue).toHaveBeenCalledWith('implementation_max_turns', '0');
+    expect(appSettingsDb.setValue).toHaveBeenCalledWith('implementation_max_turns', '10000');
+  });
+
+  it('rejects an implementation_max_turns that is not a whole number in range', async () => {
+    for (const turns of ['-1', '1.5', 'many', '', '10001']) {
+      const res = await request(app).put('/api/app-settings').send({ implementation_max_turns: turns });
+      expect(res.status).toBe(400);
+    }
+    expect(appSettingsDb.setValue).not.toHaveBeenCalled();
+  });
+
   it('rejects agent_model_settings — it is now a per-user setting, not a global key', async () => {
     const res = await request(app)
       .put('/api/app-settings')

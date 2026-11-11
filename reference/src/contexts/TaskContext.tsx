@@ -390,7 +390,8 @@ export function TaskContextProvider({ children }: { children: ReactNode }) {
         const response = await api.tasks.update(id, data);
         if (response.ok) {
           const updatedTask = (await response.json());
-          setTasks((prev) => prev.map((t) => (t.id === id ? updatedTask : t)));
+          // Keep list-only fields (e.g. cost_usd) the update response lacks.
+          setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...updatedTask } : t)));
           if (selectedTask?.id === id) {
             setSelectedTask(updatedTask);
           }
@@ -751,12 +752,22 @@ export function TaskContextProvider({ children }: { children: ReactNode }) {
       }
     };
 
+    // A turn's result moved the task's estimated cost: patch the board card.
+    const handleTaskCostUpdated = (message: ServerMessageOf<'task-cost-updated'>) => {
+      const { taskId, taskCostUsd } = message;
+      setTasks((prev) =>
+        prev.map((t) => (t.id === taskId ? { ...t, cost_usd: taskCostUsd } : t)),
+      );
+    };
+
     subscribe('streaming-started', handleStreamingStarted);
     subscribe('streaming-ended', handleStreamingEnded);
+    subscribe('task-cost-updated', handleTaskCostUpdated);
 
     return () => {
       unsubscribe('streaming-started', handleStreamingStarted);
       unsubscribe('streaming-ended', handleStreamingEnded);
+      unsubscribe('task-cost-updated', handleTaskCostUpdated);
     };
   }, [subscribe, unsubscribe]);
 

@@ -21,7 +21,11 @@ const router = express.Router();
 const ALLOWED_KEYS = new Set<keyof UpdateAppSettingsRequest>([
   'internal_tool_name',
   'github_pr_trigger',
+  'implementation_max_turns',
 ]);
+
+/** Upper bound for `implementation_max_turns`; 0 turns the cap off. */
+export const MAX_IMPLEMENTATION_TURNS = 10000;
 
 const MAX_VALUE_LENGTH = 100;
 
@@ -66,6 +70,16 @@ router.put(
             error: 'github_pr_trigger must contain only letters, digits, hyphens, or underscores',
           });
         }
+      }
+
+      if (key === 'implementation_max_turns') {
+        const turns = /^\d+$/.test(value) ? Number(value) : NaN;
+        if (!Number.isInteger(turns) || turns > MAX_IMPLEMENTATION_TURNS) {
+          return res.status(400).json({
+            error: `implementation_max_turns must be a whole number from 0 (no cap) to ${MAX_IMPLEMENTATION_TURNS}`,
+          });
+        }
+        value = String(turns);
       }
 
       if (!value) {

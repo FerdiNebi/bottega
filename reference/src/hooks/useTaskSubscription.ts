@@ -110,7 +110,21 @@ export function useTaskSubscription(
       onUsageLimitRef.current?.(msg.resumeAt, msg.agentType);
     };
 
+    // A turn ended and its conversation's estimated cost moved: patch the
+    // run(s) linked to that conversation so the step costs stay live.
+    const handleTaskCostUpdated = (msg: ServerMessageOf<'task-cost-updated'>) => {
+      if (msg.taskId !== taskId) return;
+      setAgentRuns((prev) =>
+        prev.map((run) =>
+          run.conversation_id === msg.conversationId
+            ? { ...run, cost_usd: msg.conversationCostUsd }
+            : run,
+        ),
+      );
+    };
+
     subscribe('conversation-added', handleConversationAdded);
+    subscribe('task-cost-updated', handleTaskCostUpdated);
     subscribe('task-usage-limit', handleUsageLimit);
     subscribe('agent-run-updated', handleAgentRunUpdated);
     subscribe('conversation-name-updated', handleConversationNameUpdated);
@@ -119,6 +133,7 @@ export function useTaskSubscription(
       sendMessage('unsubscribe-task', { taskId });
       subscribedTaskRef.current = null;
       unsubscribe('conversation-added', handleConversationAdded);
+      unsubscribe('task-cost-updated', handleTaskCostUpdated);
       unsubscribe('task-usage-limit', handleUsageLimit);
       unsubscribe('agent-run-updated', handleAgentRunUpdated);
       unsubscribe(

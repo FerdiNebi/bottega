@@ -56,6 +56,16 @@ findings. State lives in the document, not in either agent's context.
   check command and its result, and anything it could not run.
 - Ends its turn with **no completion script**. Completion is implicit, so the
   loop chains straight to review.
+- **Has a turn budget** of model turns (API round trips) per run, where the
+  harness supports one. The default is 150. Admins change it in Settings →
+  Agent Models (the `implementation_max_turns` app setting), and 0 turns it off.
+  A run that spends its budget has not finished: it is marked failed, does
+  **not** chain to review, and stops autopilot with
+  `the implementation run hit its <N>-turn limit.` Chaining would only send it
+  back through review's early return into another capped run. Most runs need
+  far fewer turns; the budget catches the rare runaway that would otherwise
+  cost as much as several whole tasks. See `implementationMaxTurns` in
+  [`reference/server/services/agentRunner.ts`](../reference/server/services/agentRunner.ts).
 
 ## The review agent
 

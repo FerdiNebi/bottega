@@ -23,6 +23,9 @@ vi.mock('../database/db.js', () => ({
   },
   projectsDb: {
     getByIdAdmin: vi.fn().mockReturnValue({ test_slots: 3 })
+  },
+  appSettingsDb: {
+    getValue: vi.fn().mockReturnValue(null)
   }
 }));
 
@@ -99,10 +102,11 @@ vi.mock('./autopilotFlag.js', () => ({
 import {
   startAgentRun,
   getRunningAgentForTask,
-  forceCompleteRunningAgents
+  forceCompleteRunningAgents,
+  IMPLEMENTATION_MAX_TURNS
 } from './agentRunner.js';
 
-import { tasksDb, agentRunsDb, conversationsDb, userDb } from '../database/db.js';
+import { tasksDb, agentRunsDb, conversationsDb, userDb, appSettingsDb } from '../database/db.js';
 import { startConversation } from './conversationAdapter.js';
 import { updateUserBadge } from './notifications.js';
 import { buildContextPrompt } from './documentation.js';
@@ -380,6 +384,48 @@ describe('agentRunner', () => {
           disallowedTools: ['Agent']
         })
       );
+    });
+
+    it('caps implementation runs at IMPLEMENTATION_MAX_TURNS', async () => {
+      await startAgentRun(1, 'implementation');
+
+      const [, , options] = vi.mocked(startConversation).mock.calls[0]!;
+      expect(options).toEqual(expect.objectContaining({ maxTurns: IMPLEMENTATION_MAX_TURNS }));
+    });
+
+    it('uses the implementation_max_turns app setting when set', async () => {
+      vi.mocked(appSettingsDb.getValue).mockReturnValueOnce('80');
+
+      await startAgentRun(1, 'implementation');
+
+      expect(appSettingsDb.getValue).toHaveBeenCalledWith('implementation_max_turns');
+      const [, , options] = vi.mocked(startConversation).mock.calls[0]!;
+      expect(options).toEqual(expect.objectContaining({ maxTurns: 80 }));
+    });
+
+    it('runs implementation uncapped when the setting is 0', async () => {
+      vi.mocked(appSettingsDb.getValue).mockReturnValueOnce('0');
+
+      await startAgentRun(1, 'implementation');
+
+      const [, , options] = vi.mocked(startConversation).mock.calls[0]!;
+      expect(options).not.toHaveProperty('maxTurns');
+    });
+
+    it('falls back to the default cap on a malformed setting', async () => {
+      vi.mocked(appSettingsDb.getValue).mockReturnValueOnce('lots');
+
+      await startAgentRun(1, 'implementation');
+
+      const [, , options] = vi.mocked(startConversation).mock.calls[0]!;
+      expect(options).toEqual(expect.objectContaining({ maxTurns: IMPLEMENTATION_MAX_TURNS }));
+    });
+
+    it('gives other agents no turn cap', async () => {
+      await startAgentRun(1, 'review');
+
+      const [, , options] = vi.mocked(startConversation).mock.calls[0]!;
+      expect(options).not.toHaveProperty('maxTurns');
     });
 
     it('should not disallow Agent tool for planification agent', async () => {

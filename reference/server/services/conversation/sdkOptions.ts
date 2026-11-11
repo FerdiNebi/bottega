@@ -69,6 +69,7 @@ export interface MapOptionsInput {
   /** Reasoning effort, or null when none was chosen. */
   effort?: string | null | undefined;
   disallowedTools?: string[] | undefined;
+  maxTurns?: number | undefined;
 }
 
 export interface SDKOptions {
@@ -83,6 +84,7 @@ export interface SDKOptions {
   includePartialMessages?: boolean;
   thinking?: { type: string; display: string };
   disallowedTools?: string[];
+  maxTurns?: number;
   resume?: string;
   sessionStore?: typeof sqliteSessionStore;
   sessionStoreFlush?: 'eager' | 'lazy';
@@ -146,6 +148,10 @@ export function mapOptionsToSDK(options: MapOptionsInput): SDKOptions {
 
   if (options.disallowedTools?.length) {
     sdkOptions.disallowedTools = options.disallowedTools;
+  }
+
+  if (options.maxTurns !== undefined && options.maxTurns > 0) {
+    sdkOptions.maxTurns = options.maxTurns;
   }
 
   // Refuse shell commands that would kill Bottega itself (e.g. an agent

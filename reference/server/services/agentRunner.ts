@@ -8,7 +8,7 @@
  * by the ConversationAdapter when streaming completes.
  */
 
-import { tasksDb, agentRunsDb, conversationsDb, userDb, projectsDb } from '../database/db.js';
+import { tasksDb, agentRunsDb, conversationsDb, userDb, projectsDb, appSettingsDb } from '../database/db.js';
 import { isAutopilotProject } from './autopilotFlag.js';
 import { cancelUsageLimitPause } from './usageLimitPause.js';
 import { taskPortRange } from './taskResources.js';
@@ -45,6 +45,22 @@ import type {
   BroadcastToTaskSubscribersFn,
 } from '@shared/websocket/messages';
 import type { VideoConfig } from './conversation/types.js';
+
+/**
+ * Default turn budget (SDK `maxTurns`) for an implementation run. Most runs
+ * use far fewer (median ~20, p95 ~140); a run that spends it is stopped rather
+ * than chained (core/execution-loop.md, "Has a turn budget"). Admins change it
+ * via the `implementation_max_turns` app setting; 0 turns the cap off.
+ */
+export const IMPLEMENTATION_MAX_TURNS = 150;
+
+/** The configured implementation turn budget, or undefined when there is no cap. */
+export function implementationMaxTurns(): number | undefined {
+  const raw = appSettingsDb.getValue('implementation_max_turns');
+  const turns = raw === null ? IMPLEMENTATION_MAX_TURNS : Number(raw);
+  if (!Number.isInteger(turns) || turns < 0) return IMPLEMENTATION_MAX_TURNS;
+  return turns === 0 ? undefined : turns;
+}
 
 export interface StartAgentRunOptions {
   broadcastFn?: BroadcastFn | undefined;
@@ -296,6 +312,7 @@ export async function startAgentRun(
   if (autopilot) {
     disallowedTools.push('AskUserQuestion');
   }
+  const maxTurns = agentType === 'implementation' ? implementationMaxTurns() : undefined;
 
   // Start conversation via adapter
   // The adapter handles all lifecycle events (streaming-started, streaming-ended,
@@ -311,6 +328,7 @@ export async function startAgentRun(
     model,
     ...(effort !== null ? { effort } : {}),
     disallowedTools,
+    ...(maxTurns !== undefined ? { maxTurns } : {}),
     videoConfig: videoConfig,
   });
 
