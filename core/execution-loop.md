@@ -33,6 +33,9 @@ findings. State lives in the document, not in either agent's context.
 
 - Reads the task doc. **If a Review Findings section exists, address those
   issues first** — they're feedback from the previous review pass.
+- Reads every topic note the plan lists under **Relevant Notes** before
+  changing code, plus the note of any other area it ends up touching. The
+  reviewer reads the same notes and checks the change against their pitfalls.
 - Implements the **unchecked** to-do items in the worktree, marking each `[x]`
   as it finishes.
 - **Does not ask questions** — it proceeds autonomously. Ambiguity was meant to

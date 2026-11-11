@@ -23,7 +23,8 @@ Spawn a planning sub-agent (Task tool, subagent_type=Plan) to explore the codeba
 
 Prompt it with:
 - What to investigate (relevant services, models, tests, patterns)
-- To return: relevant files with line numbers, current architecture, dependencies, and any ambiguities it found
+- To read the "Topic notes" index in `CLAUDE.md`, if there is one, and the `docs/agent-notes/*.md` notes for the areas the task touches
+- To return: relevant files with line numbers, current architecture, dependencies, which topic notes apply and the pitfalls in them that bear on this task, and any ambiguities it found
 - Explicit instruction: "Do NOT write any files, run any scripts, or ask user questions. Only explore and return findings."
 
 ### Step 2: Clarify (master agent — you)
@@ -52,6 +53,7 @@ Do NOT delegate file writing to a sub-agent.
 
 The plan must follow every section in the template at @{{planTemplatePath}}, in the same order, with no sections removed. Add new sections only if the work genuinely requires them. In particular:
 - The `## Original Request` section must quote, verbatim, the pre-existing content of `{{taskDocPath}}` as you read it before this step (plus the task title if the doc was empty). Read the file BEFORE writing — once you Write, the original content is gone.
+- The `## Relevant Notes` section lists every topic note the explore step found to apply (path and one line on why), or "None". The implementation and review agents read only the notes listed there.
 - The Testing Strategy must reflect what was confirmed with the user in Step 2.
 - The Project Docs Update section may say "Not needed for this change." for minor features, but the section must still be present.
 

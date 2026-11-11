@@ -74,7 +74,11 @@ The project knowledge lives in two places, both owned by Bottega:
 - **Topic notes** under `docs/agent-notes/` (one Markdown file per area, e.g.
   `e2e-testing.md`, `menus.md`). They hold the detail and are read only by the
   tasks that need them, so detail costs nothing for a task that never opens
-  the file.
+  the file. Nothing loads them automatically: the planner lists the notes a
+  task needs under **Relevant Notes** in the plan, and the implementation and
+  review agents read those first
+  ([`../core/planning-agent.md`](../core/planning-agent.md)). YOLO picks and
+  reads them in its own planning phase.
 
 The managed section has four parts:
 

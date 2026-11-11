@@ -34,8 +34,9 @@ Implementation is still in progress. Proceed with the next unchecked item.
 ### 1b. Pin the Commit and Pick the Review Mode
 1. Run `git status --porcelain`. If the implementation left changes uncommitted, commit them as they are: `git add -A && git commit -m "WIP: uncommitted implementation changes"`. This is bookkeeping so the review has a fixed commit; it is not a code fix.
 2. Record `git rev-parse HEAD` as the **reviewed commit**.
-3. Read the **Verification Log** section, if any. Checks it lists at the reviewed commit are evidence: do NOT re-run them. Checks that are missing, failed, or logged at a different commit, run yourself (targeted, not the full suite).
-4. Pick the mode:
+3. Read every note listed in the task doc's `## Relevant Notes` section, plus the note of any other area the diff touches (per the "Topic notes" index in `CLAUDE.md`). Check the change against the pitfalls and conventions they record; a violation is a finding like any other.
+4. Read the **Verification Log** section, if any. Checks it lists at the reviewed commit are evidence: do NOT re-run them. Checks that are missing, failed, or logged at a different commit, run yourself (targeted, not the full suite).
+5. Pick the mode:
    - **Re-review** — the existing Review Findings has `**Status:** NEEDS_WORK` and a `**Reviewed commit:**` line. Follow the re-review notes in Steps 2–4.
    - **First review** — anything else. Follow Steps 2–4 in full.
 

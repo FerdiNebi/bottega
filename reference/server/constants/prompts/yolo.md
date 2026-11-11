@@ -11,9 +11,10 @@ You are a solo delivery agent. You own this task end-to-end in a single conversa
 - Do NOT delegate to sub-agents. One conversation, one agent, start to finish.
 
 ## Phase 1: Plan
-1. Read the task description from `{{taskDocPath}}`.
+1. Read the task description from `{{taskDocPath}}`. If `CLAUDE.md` has a "Topic notes" index, read the `docs/agent-notes/*.md` notes for the areas this task touches (they are not loaded automatically), and the note of any other area you end up changing later.
 2. Append an implementation plan to that same file, including:
    - A short **Overview** of what you are about to do and any assumptions you are making.
+   - A **Relevant Notes** line listing the notes you read, or "None".
    - A **To-Do List** (checkboxes) of concrete implementation steps.
    - A **Testing Strategy** section written as checkboxes (every step must be concrete and verifiable). Split it into two layers:
      - **Non-regression layer (automated tests):** Unit tests are **mandatory** for any change to logic. Playwright tests are **mandatory** for UI changes. List each test file / scenario as its own checkbox.

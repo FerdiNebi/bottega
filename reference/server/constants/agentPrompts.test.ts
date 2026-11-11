@@ -354,6 +354,24 @@ describe('generateLearningsMessage', () => {
   });
 });
 
+describe('topic notes (extra/learnings-agent.md)', () => {
+  it('has the planner list the notes a task needs and the other agents read them', async () => {
+    const plan = await generatePlanificationMessage('/t.md', 1);
+    expect(plan).toContain('The `## Relevant Notes` section lists every topic note');
+    expect(plan).toContain('`docs/agent-notes/*.md` notes for the areas the task touches');
+    expect(await generatePlanificationMessage('/t.md', 1, false)).toContain(
+      'The `## Relevant Notes` section lists every topic note',
+    );
+    expect(await generateImplementationMessage('/t.md', 1)).toContain(
+      'then every note listed in its `## Relevant Notes` section',
+    );
+    expect(await generateReviewMessage('/t.md', 1, 'main')).toContain(
+      'Read every note listed in the task doc\'s `## Relevant Notes` section',
+    );
+    expect(await generateYoloMessage('/t.md', 1, null, 'main')).toContain('A **Relevant Notes** line');
+  });
+});
+
 describe('full-suite ownership (core/execution-loop.md)', () => {
   it('has the reviewer run every slow suite once, record the commands, and skip it when no code changed', async () => {
     const msg = await generateReviewMessage('/t.md', 1, 'trunk');

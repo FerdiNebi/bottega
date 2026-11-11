@@ -58,6 +58,12 @@ The plan must follow a fixed structure
 
 - **Original Request** — the user's words, quoted verbatim.
 - **Overview** — problem statement, scope, key decisions made.
+- **Relevant Notes** — the project's topic notes (`docs/agent-notes/*.md`, see
+  [`../extra/learnings-agent.md`](../extra/learnings-agent.md)) for the areas
+  this task touches, picked from the index in `CLAUDE.md`, or "None". The
+  notes are not loaded automatically, only the index is; listing them here
+  makes reading them a step of the task for the implementer and the reviewer
+  instead of a judgement call each run makes on its own.
 - **Implementation Plan** — ordered phases, each listing the files to
   modify/create and what changes.
 - **Testing Strategy** — unit tests and manual/Playwright scenarios (or an

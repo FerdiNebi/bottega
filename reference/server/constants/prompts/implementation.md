@@ -1,7 +1,7 @@
 @agent-Implement Read the task documentation at `{{taskDocPath}}` and implement the unchecked items from the To-Do List.
 
 ## Instructions
-1. Read the task documentation file
+1. Read the task documentation file, then every note listed in its `## Relevant Notes` section. If you end up touching an area whose note (per the "Topic notes" index in `CLAUDE.md`) is not listed, read that note too before changing it
 2. Check if a "Review Findings" section exists
    - If it does, pay special attention to documented issues
    - Address any issues from the previous review first

@@ -17,6 +17,17 @@ summarize, or omit any part of it. This section is mandatory.
    For non-technical users, surface the technical decisions you made silently here so
    future-you and reviewers can audit them. }}
 
+## Relevant Notes
+
+<!--
+The project's topic notes for the areas this task touches. Pick them from the "Topic notes"
+index in CLAUDE.md (lines like "Before ..., read `docs/agent-notes/<topic>.md`"). The
+implementation and review agents read every note listed here before they start; notes are
+not loaded otherwise. Write "None" if the project has no such index or no note applies.
+-->
+
+- `docs/agent-notes/{{ topic }}.md` — {{ why it applies }}
+
 ## Implementation Plan
 
 ### Phase 1: {{ phase title }}
