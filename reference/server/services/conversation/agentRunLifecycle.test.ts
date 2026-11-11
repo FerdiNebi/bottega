@@ -34,6 +34,10 @@ vi.mock('../agentRunner.js', () => ({
   getRunningAgentForTask: vi.fn().mockReturnValue(null)
 }));
 
+vi.mock('../documentation.js', () => ({
+  readTaskDoc: vi.fn().mockReturnValue('')
+}));
+
 vi.mock('../autopilotFlag.js', () => ({
   isAutopilotProject: vi.fn().mockReturnValue(false)
 }));
@@ -55,6 +59,7 @@ import { worktreeExists } from '../worktree.js';
 import { notifyClaudeComplete } from '../notifications.js';
 import { startAgentRun, getRunningAgentForTask } from '../agentRunner.js';
 import { isAutopilotProject } from '../autopilotFlag.js';
+import { readTaskDoc } from '../documentation.js';
 import {
   onAutopilotRunCompleted,
   onAutopilotLoopStopped,
@@ -255,6 +260,67 @@ describe('buildAgentRunCompletionHandler', () => {
     await vi.advanceTimersByTimeAsync(1000);
 
     expect(startAgentRun).toHaveBeenCalledWith(7, 'review', expect.any(Object));
+  });
+
+  describe('phased plans (core/execution-loop.md)', () => {
+    const PHASED_DOC = [
+      '## To-Do List',
+      '### Phase 1: Schema',
+      '- [x] column',
+      '### Phase 2: UI',
+      '- [ ] form',
+      '## Progress Log',
+    ].join('\n');
+
+    function finishImplementation(phase: number | null, doc: string) {
+      vi.mocked(agentRunsDb.getByTask).mockReturnValue([
+        { id: 9, conversation_id: 100, agent_type: 'implementation', status: 'running', phase, phase_count: 2 }
+      ] as never);
+      vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, project_id: 3, workflow_run_count: 1 } as never);
+      vi.mocked(readTaskDoc).mockReturnValue(doc);
+    }
+
+    it('starts a fresh implementation run for the next phase when the run finished its phase', async () => {
+      finishImplementation(1, PHASED_DOC);
+
+      await buildAgentRunCompletionHandler(ctx())();
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(readTaskDoc).toHaveBeenCalledWith(3, 7);
+      expect(startAgentRun).toHaveBeenCalledWith(
+        7,
+        'implementation',
+        expect.objectContaining({ phaseContinuation: true }),
+      );
+    });
+
+    it('goes to review when the run left its phase unfinished', async () => {
+      finishImplementation(2, PHASED_DOC);
+
+      await buildAgentRunCompletionHandler(ctx())();
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(startAgentRun).toHaveBeenCalledWith(7, 'review', expect.not.objectContaining({ phaseContinuation: true }));
+    });
+
+    it('goes to review after the last phase', async () => {
+      finishImplementation(2, PHASED_DOC.replace('- [ ] form', '- [x] form'));
+
+      await buildAgentRunCompletionHandler(ctx())();
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(startAgentRun).toHaveBeenCalledWith(7, 'review', expect.any(Object));
+    });
+
+    it('does not read the doc for an unscoped implementation run', async () => {
+      finishImplementation(null, PHASED_DOC);
+
+      await buildAgentRunCompletionHandler(ctx())();
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(readTaskDoc).not.toHaveBeenCalled();
+      expect(startAgentRun).toHaveBeenCalledWith(7, 'review', expect.any(Object));
+    });
   });
 
   it('chains review → implementation when not workflow_complete', async () => {

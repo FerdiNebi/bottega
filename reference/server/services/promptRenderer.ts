@@ -100,7 +100,16 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     label: 'Implementation',
     kind: 'prompt',
     file: 'implementation.md',
-    variables: ['taskDocPath', 'taskId'],
+    variables: ['taskDocPath', 'taskId', 'phaseBlock'],
+  },
+  // Inlined as {{phaseBlock}} into implementation when the plan is phased:
+  // the run implements one phase (core/execution-loop.md). Empty otherwise.
+  {
+    name: 'implementation-phase',
+    label: 'Implementation: Phase Scope',
+    kind: 'prompt',
+    file: 'implementation-phase.md',
+    variables: ['phaseNumber', 'phaseCount', 'phaseTitle'],
   },
   {
     name: 'review',

@@ -12,7 +12,8 @@ vi.mock('../database/db.js', () => ({
     create: vi.fn(),
     getByTask: vi.fn(),
     linkConversation: vi.fn(),
-    updateStatus: vi.fn()
+    updateStatus: vi.fn(),
+    setPhase: vi.fn()
   },
   conversationsDb: {
     create: vi.fn(),
@@ -41,7 +42,8 @@ vi.mock('./notifications.js', () => ({
 vi.mock('./documentation.js', () => ({
   buildContextPrompt: vi.fn().mockReturnValue('test context prompt'),
   getTaskDocPath: vi.fn((projectId, taskId) => `/archive/projects/${projectId}/tasks/task-${taskId}.md`),
-  getRecordingPath: vi.fn((projectId, taskId) => `/archive/projects/${projectId}/recordings/task-${taskId}.webm`)
+  getRecordingPath: vi.fn((projectId, taskId) => `/archive/projects/${projectId}/recordings/task-${taskId}.webm`),
+  readTaskDoc: vi.fn().mockReturnValue('')
 }));
 
 vi.mock('../constants/agentPrompts.js', () => ({
@@ -109,7 +111,7 @@ import {
 import { tasksDb, agentRunsDb, conversationsDb, userDb, appSettingsDb } from '../database/db.js';
 import { startConversation } from './conversationAdapter.js';
 import { updateUserBadge } from './notifications.js';
-import { buildContextPrompt } from './documentation.js';
+import { buildContextPrompt, readTaskDoc } from './documentation.js';
 import {
   generatePlanificationMessage,
   generateImplementationMessage,
@@ -236,7 +238,7 @@ describe('agentRunner', () => {
     it('should create agent run and conversation for implementation agent', async () => {
       const result = await startAgentRun(1, 'implementation');
 
-      expect(generateImplementationMessage).toHaveBeenCalledWith('/archive/projects/1/tasks/task-1.md', 1);
+      expect(generateImplementationMessage).toHaveBeenCalledWith('/archive/projects/1/tasks/task-1.md', 1, null);
       expect(agentRunsDb.create).toHaveBeenCalledWith(1, 'implementation', null, 'anthropic');
       expect(conversationsDb.create).toHaveBeenCalledWith(1, 'anthropic', 'opus', 'high');
       expect(result.agentRun).toEqual(mockAgentRun);
@@ -301,7 +303,8 @@ describe('agentRunner', () => {
       // Task doc always lives in the central archive (not the worktree)
       expect(generateImplementationMessage).toHaveBeenCalledWith(
         '/archive/projects/1/tasks/task-1.md',
-        1
+        1,
+        null
       );
     });
 
@@ -419,6 +422,56 @@ describe('agentRunner', () => {
 
       const [, , options] = vi.mocked(startConversation).mock.calls[0]!;
       expect(options).toEqual(expect.objectContaining({ maxTurns: IMPLEMENTATION_MAX_TURNS }));
+    });
+
+    describe('phased plans (core/execution-loop.md)', () => {
+      const PHASED_DOC = [
+        '## To-Do List',
+        '### Phase 1: Schema',
+        '- [x] column',
+        '### Phase 2: UI',
+        '- [ ] form',
+        '### Phase 3: Docs',
+        '- [ ] guide',
+        '## Progress Log',
+      ].join('\n');
+
+      it('scopes an implementation run to the first unfinished phase and records it', async () => {
+        vi.mocked(readTaskDoc).mockReturnValueOnce(PHASED_DOC);
+
+        await startAgentRun(1, 'implementation');
+
+        expect(generateImplementationMessage).toHaveBeenCalledWith(
+          expect.any(String),
+          1,
+          { number: 2, count: 3, title: 'UI' },
+        );
+        expect(agentRunsDb.setPhase).toHaveBeenCalledWith(expect.anything(), 2, 3);
+      });
+
+      it('runs unscoped when the doc has no phase sections', async () => {
+        vi.mocked(readTaskDoc).mockReturnValueOnce('## To-Do List\n### Implementation\n- [ ] a');
+
+        await startAgentRun(1, 'implementation');
+
+        expect(generateImplementationMessage).toHaveBeenCalledWith(expect.any(String), 1, null);
+        expect(agentRunsDb.setPhase).not.toHaveBeenCalled();
+      });
+
+      it('does not read the doc for other agents', async () => {
+        await startAgentRun(1, 'review');
+
+        expect(readTaskDoc).not.toHaveBeenCalled();
+      });
+
+      it('counts a normal run toward the iteration cap but not a phase continuation', async () => {
+        await startAgentRun(1, 'implementation');
+        expect(tasksDb.incrementRunCount).toHaveBeenCalledTimes(1);
+
+        vi.mocked(tasksDb.incrementRunCount).mockClear();
+        await startAgentRun(1, 'implementation', { phaseContinuation: true });
+        expect(tasksDb.incrementRunCount).not.toHaveBeenCalled();
+      });
     });
 
     it('gives other agents no turn cap', async () => {

@@ -102,7 +102,10 @@ does this:
    - **If `workflow_run_count` ≥ the cap:** auto-block the task and STOP
      (broadcast `task-blocked`, reason `max_iterations`).
    - **Otherwise alternate the loop:** implementation → review, review →
-     implementation.
+     implementation. Exception: an implementation run that finished its plan
+     phase while a later phase still has unchecked items chains to a fresh
+     implementation run for that phase (see
+     [`execution-loop.md`](./execution-loop.md#one-implementation-run-per-plan-phase)).
    - **PR is terminal** — nothing chains after it.
 
 ### Why the loop alternates the way it does
@@ -170,7 +173,9 @@ and the obvious "pass success/failure into the handler" design is the wrong one.
   (the reference uses a ~1s `setTimeout`) so the finishing turn's status write
   and broadcasts land first, and it **re-reads the task flags inside that
   callback** — the task may have been completed or blocked in the gap.
-- **Iteration cap.** Every run increments `workflow_run_count`. When it reaches
+- **Iteration cap.** Every run increments `workflow_run_count`, except a phase
+  continuation (the next plan phase's implementation run, which only starts
+  once the previous phase is finished, so it is bounded by the phase count). When it reaches
   the cap (reference: `MAX_WORKFLOW_RUNS = 25`) the loop auto-blocks the task
   rather than running forever. Manual chats do not count. (Runs that end on the
   provider's usage limit don't count either, if the

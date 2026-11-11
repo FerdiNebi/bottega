@@ -594,6 +594,20 @@ const runMigrations = (): void => {
       console.error('Error migrating task_agent_runs for learnings agent type:', message);
     }
 
+    // phase / phase_count — the plan phase an implementation run was scoped to
+    // (core/execution-loop.md, one run per phase). After the rebuild above,
+    // which copies a fixed column list.
+    const agentRunsColumnsNow = (
+      db.prepare('PRAGMA table_info(task_agent_runs)').all() as ColumnInfoRow[]
+    ).map((col) => col.name);
+    if (agentRunsColumnsNow.length > 0 && !agentRunsColumnsNow.includes('phase')) {
+      console.log('Running migration: Adding phase columns to task_agent_runs');
+      db.exec(`
+        ALTER TABLE task_agent_runs ADD COLUMN phase INTEGER DEFAULT NULL;
+        ALTER TABLE task_agent_runs ADD COLUMN phase_count INTEGER DEFAULT NULL;
+      `);
+    }
+
     const projectsTableInfo = db
       .prepare('PRAGMA table_info(projects)')
       .all() as ColumnInfoRow[];
@@ -1709,6 +1723,15 @@ const agentRunsDb = {
        WHERE id = ?`
     ).run(conversationId, id);
     return agentRunsDb.getById(id);
+  },
+
+  /** Record the plan phase an implementation run is scoped to. */
+  setPhase: (id: number, phase: number, phaseCount: number): void => {
+    db.prepare('UPDATE task_agent_runs SET phase = ?, phase_count = ? WHERE id = ?').run(
+      phase,
+      phaseCount,
+      id,
+    );
   },
 
   // Look up the agent run that owns a given conversation. Used to keep

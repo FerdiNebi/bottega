@@ -14,7 +14,8 @@ import { cancelUsageLimitPause } from './usageLimitPause.js';
 import { taskPortRange } from './taskResources.js';
 import { startConversation } from './conversationAdapter.js';
 import { updateUserBadge } from './notifications.js';
-import { buildContextPrompt, getTaskDocPath, getRecordingPath } from './documentation.js';
+import { buildContextPrompt, getTaskDocPath, getRecordingPath, readTaskDoc } from './documentation.js';
+import { nextUnfinishedPhase, phasedTodo } from './taskPhases.js';
 import {
   getWorktreeProjectPath,
   worktreeExists,
@@ -34,6 +35,7 @@ import {
   generatePrAgentCommentMessage,
   generatePrAgentReviewMessage,
   generateYoloMessage,
+  type ImplementationPhase,
 } from '../constants/agentPrompts.js';
 import { loadAgentModelSettings } from './agentModelSettings.js';
 import { buildTaskRunDigest } from './taskRunDigest.js';
@@ -70,6 +72,12 @@ export interface StartAgentRunOptions {
     comments?: unknown;
     [key: string]: unknown;
   } | undefined;
+  /**
+   * The run continues a phased plan with its next phase (chained by the loop
+   * after the previous phase finished). Bounded by the phase count, so it
+   * doesn't count toward the iteration cap (core/orchestration-loop.md).
+   */
+  phaseContinuation?: boolean | undefined;
 }
 
 export interface StartAgentRunResult {
@@ -104,6 +112,15 @@ export async function startAgentRun(
   // Task doc lives in the central archive, not the worktree — survives PR merge
   const taskDocPath = toPromptPath(getTaskDocPath(taskWithProject.project_id, taskId));
 
+  // Implementation of a phased plan runs one phase (core/execution-loop.md):
+  // scope it to the first phase with an unchecked item.
+  let phase: ImplementationPhase | null = null;
+  if (agentType === 'implementation') {
+    const phases = phasedTodo(readTaskDoc(taskWithProject.project_id, taskId));
+    const next = nextUnfinishedPhase(phases);
+    if (next) phase = { number: next.number, count: phases.length, title: next.title };
+  }
+
   // Generate message based on agent type
   let message: string;
   switch (agentType) {
@@ -117,7 +134,7 @@ export async function startAgentRun(
       break;
     }
     case 'implementation':
-      message = await generateImplementationMessage(taskDocPath, taskId);
+      message = await generateImplementationMessage(taskDocPath, taskId, phase);
       break;
     case 'review':
       message = await generateReviewMessage(
@@ -241,14 +258,22 @@ export async function startAgentRun(
   // usage-limit resume (extra/parallel-runs.md §1).
   cancelUsageLimitPause(taskId);
 
-  // Increment workflow run count (for infinite loop prevention)
-  tasksDb.incrementRunCount(taskId);
+  // Increment workflow run count (for infinite loop prevention). A phase
+  // continuation only starts after a phase finished, so it is bounded already.
+  if (!options.phaseContinuation) {
+    tasksDb.incrementRunCount(taskId);
+  }
 
   // Create agent run record (stamped with provider for diagnostics).
   // (provider, model, effort) were loaded above so credential
   // validation could see the right backend.
   void agentSettings;
   const agentRun = agentRunsDb.create(taskId, agentType, null, provider);
+  if (phase) {
+    agentRunsDb.setPhase(agentRun.id, phase.number, phase.count);
+    agentRun.phase = phase.number;
+    agentRun.phase_count = phase.count;
+  }
   console.log(
     `[AgentRunner] Created agent run ${agentRun.id} (${agentType}) for task ${taskId} (provider=${provider})`,
   );
@@ -280,6 +305,7 @@ export async function startAgentRun(
         status: 'running',
         agent_type: agentType,
         conversation_id: conversation.id,
+        ...(phase ? { phase: phase.number, phase_count: phase.count } : {}),
       },
     });
   }

@@ -431,3 +431,35 @@ describe('local CI mode (extra/local-ci.md)', () => {
     expect(msg).not.toContain('local CI');
   });
 });
+
+describe('one implementation run per plan phase (core/execution-loop.md)', () => {
+  it('scopes a phased run to its phase and asks for a Progress Log entry', async () => {
+    const msg = await generateImplementationMessage('/t.md', 1, { number: 2, count: 4, title: 'Owner UI' });
+
+    expect(msg).toContain('## This Run: Phase 2 of 4 Only');
+    expect(msg).toContain('**Phase 2: Owner UI**');
+    expect(msg).toContain('ONLY the To-Do items under `### Phase 2`');
+    expect(msg).toContain('append an entry to the `## Progress Log` section');
+    expect(msg).toContain('### Phase 2: Owner UI');
+    expect(msg).not.toMatch(/\{\{\w+\}\}/);
+  });
+
+  it('adds no phase scope to an unphased run', async () => {
+    const msg = await generateImplementationMessage('/t.md', 1);
+
+    expect(msg).not.toContain('This Run: Phase');
+    expect(msg).not.toMatch(/\{\{\w+\}\}/);
+    // Every run still reads the Progress Log when there is one.
+    expect(msg).toContain('If the doc has a `## Progress Log`, read it');
+  });
+});
+
+describe('planner cost rules (core/planning-agent.md)', () => {
+  it.each([true, false])('runs research on Sonnet and splits non-trivial plans into phases (technical: %s)', async (isTechnical) => {
+    const msg = await generatePlanificationMessage('/t.md', 1, isTechnical);
+
+    expect(msg).toContain('subagent_type=Plan, model: "sonnet"');
+    expect(msg).toContain('use **one phase only** for a small change (at most ~6 To-Do items');
+    expect(msg).toContain('Leave the `## Progress Log` section empty');
+  });
+});

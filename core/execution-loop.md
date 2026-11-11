@@ -18,7 +18,10 @@ resolve. No person acts in between.
 The two agents are separate, stateless turns — they don't share memory. They
 coordinate **entirely through the task doc**. That one file carries:
 
-- the plan's **To-Do List** (`Implementation` + `Testing` checkboxes), and
+- the plan's **To-Do List**, grouped into one `### Phase N: …` section per plan
+  phase, each holding that phase's code and test checkboxes,
+- a **Progress Log** each phase run appends to: what it finished, its commit,
+  and what the next phase needs to know, and
 - a **Review Findings** section the review agent writes and the implementation
   agent reads.
 
@@ -55,7 +58,7 @@ findings. State lives in the document, not in either agent's context.
 - **Writes the Verification Log** (replacing the previous one): the commit, each
   check command and its result, and anything it could not run.
 - Ends its turn with **no completion script**. Completion is implicit, so the
-  loop chains straight to review.
+  loop chains straight to review, or to the next phase (below).
 - **Has a turn budget** of model turns (API round trips) per run, where the
   harness supports one. The default is 150. Admins change it in Settings →
   Agent Models (the `implementation_max_turns` app setting), and 0 turns it off.
@@ -66,6 +69,49 @@ findings. State lives in the document, not in either agent's context.
   far fewer turns; the budget catches the rare runaway that would otherwise
   cost as much as several whole tasks. See `implementationMaxTurns` in
   [`reference/server/services/agentRunner.ts`](../reference/server/services/agentRunner.ts).
+
+## One implementation run per plan phase
+
+A run's cost grows with every turn, because each turn re-sends the whole
+conversation so far: a 147-turn run that ended at a 453k-token context re-read
+40M tokens. Splitting the same work into one run per phase keeps each context
+small; on that run's real data six phase runs would have re-read about 40% as
+much, despite extra turns spent re-orienting. So when the To-Do List has **two
+or more** phase sections, implementation runs one phase at a time:
+
+- **The orchestrator picks the phase, not the agent.** When an implementation
+  run starts, it parses the To-Do List, takes the **first phase with an
+  unchecked item**, records it on the run (`phase`, `phase_count`), and tells
+  the agent: implement only this phase, don't start the next. Items under a
+  To-Do heading that isn't a phase count toward the last phase.
+- **Each phase run re-orients from the doc**, not from memory: the plan, the
+  Relevant Notes, the Progress Log, and the commits listed there. It then
+  works, checks off its phase's items, commits, and **appends a Progress Log
+  entry**: phase, commit, what was done, decisions, and anything the next
+  phase must know. It replaces the Verification Log as usual.
+- **Chaining.** When a phase run ends normally, the loop checks the doc again:
+  - its phase is now fully checked **and** a later phase has unchecked items →
+    start a **fresh** implementation run for that phase;
+  - otherwise → review, as before. A phase left unfinished goes to review, whose
+    early return sends it back to implementation; that keeps the existing
+    safety net and the iteration cap.
+- **Phase continuation runs don't count toward the iteration cap.** They only
+  start after a phase was completed, so they are bounded by the number of
+  phases. Review round trips still count.
+- **Review stays at the end.** It runs once all phases are checked, on the
+  final commit, with the full suite once (see below). Review findings go back
+  to an ordinary implementation run: with every phase checked there is no phase
+  to scope to, so the agent addresses the findings as today.
+- **One-phase plans and docs without phase sections** (older plans with
+  `### Implementation` / `### Testing`) behave exactly as before: one run
+  implements every unchecked item.
+- The turn budget applies per phase run. A phase run that hits it stops the
+  loop like any capped run.
+
+See [`reference/server/services/taskPhases.ts`](../reference/server/services/taskPhases.ts)
+(parsing), `implementation-phase.md` (the phase instructions added to the
+prompt), and `handleAgentChaining` in
+[`reference/server/services/conversation/agentRunLifecycle.ts`](../reference/server/services/conversation/agentRunLifecycle.ts).
 
 ## The review agent
 
@@ -155,7 +201,9 @@ that the loop checks **before** that toggle —
 - and the iteration cap auto-blocks a runaway loop.
 
 So a NEEDS_WORK review (which sets no flag) simply falls through to the toggle
-and bounces back to implementation.
+and bounces back to implementation. After an implementation run that finished
+its phase while later phases remain, the toggle starts the next phase's
+implementation run instead of review.
 
 ## Why two agents
 
@@ -172,6 +220,11 @@ keeps the loop dumb and reliable (see
       with targeted checks as it goes → check them off → CI-equivalent fast
       checks → commit → write the Verification Log → never ask questions.
 - [ ] Disallow sub-agent delegation for the implementation agent.
+- [ ] One implementation run per plan phase: parse the To-Do List's phase
+      sections, scope each run to the first unfinished phase (recorded on the
+      run), have it append a Progress Log entry, chain to the next phase when
+      its phase is done, and to review otherwise. Phase continuations don't
+      count toward the iteration cap.
 - [ ] The review prompt: early-return guard → first review (strict per-item
       verification, trust logged checks at the current commit, full suite once
       with its commands recorded, or not at all when only non-code files
