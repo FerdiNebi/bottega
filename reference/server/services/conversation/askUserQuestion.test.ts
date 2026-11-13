@@ -5,13 +5,13 @@ vi.mock('../../database/db.js', () => ({
   conversationsDb: { getById: vi.fn() },
   tasksDb: { getById: vi.fn() },
 }));
-vi.mock('../autopilotFlag.js', () => ({ isAutopilotProject: vi.fn() }));
+vi.mock('../autopilotFlag.js', () => ({ isAutopilotTask: vi.fn() }));
 vi.mock('../conversationContentStore.js', () => ({ resolveProjectKey: vi.fn() }));
 vi.mock('../sqliteSessionStore.js', () => ({ sqliteSessionStore: {} }));
 vi.mock('./startConversation.js', () => ({ sendMessage: vi.fn() }));
 
 import { agentRunsDb, conversationsDb, tasksDb } from '../../database/db.js';
-import { isAutopilotProject } from '../autopilotFlag.js';
+import { isAutopilotTask } from '../autopilotFlag.js';
 import {
   AUTOPILOT_DENY_MESSAGE,
   buildAskUserQuestionHook,
@@ -26,7 +26,7 @@ describe('buildCanUseTool under autopilot (extra/autopilot.md)', () => {
     vi.clearAllMocks();
     vi.mocked(conversationsDb.getById).mockReturnValue({ id: 50, task_id: 7 } as never);
     vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, project_id: 3 } as never);
-    vi.mocked(isAutopilotProject).mockReturnValue(true);
+    vi.mocked(isAutopilotTask).mockReturnValue(true);
   });
 
   it('denies AskUserQuestion for an agent run of an autopilot project', async () => {
@@ -36,7 +36,7 @@ describe('buildCanUseTool under autopilot (extra/autopilot.md)', () => {
     const result = await canUseTool('AskUserQuestion', input, {});
 
     expect(result).toEqual({ behavior: 'deny', message: AUTOPILOT_DENY_MESSAGE });
-    expect(isAutopilotProject).toHaveBeenCalledWith(3);
+    expect(isAutopilotTask).toHaveBeenCalledWith(expect.objectContaining({ id: 7, project_id: 3 }));
   });
 
   it('still asks in a manual chat (no agent run), e.g. the PRD interview', async () => {
@@ -57,7 +57,7 @@ describe('buildAskUserQuestionHook', () => {
     vi.clearAllMocks();
     vi.mocked(conversationsDb.getById).mockReturnValue({ id: 50, task_id: 7 } as never);
     vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, project_id: 3 } as never);
-    vi.mocked(isAutopilotProject).mockReturnValue(true);
+    vi.mocked(isAutopilotTask).mockReturnValue(true);
   });
 
   it('turns the autopilot deny into a PreToolUse deny decision', async () => {

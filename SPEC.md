@@ -82,6 +82,7 @@ Opinionated features. Each is independent; implement what you want.
 | [`extra/kanban-board.md`](./extra/kanban-board.md) | The opinionated projects/tasks board and 4-screen UI for authoring tasks. Swap for Jira/Notion/etc. |
 | [`extra/project-bootstrap.md`](./extra/project-bootstrap.md) | Guided sessions that interview you into a `PRD.md` and an `ARD.md`, then turn them into dependency-leveled tasks. Another task source, like the board. |
 | [`extra/autopilot.md`](./extra/autopilot.md) | One checkbox: run a project's tasks in dependency order through the whole pipeline, with no questions, auto-merging each when the tests pass. |
+| [`extra/task-logging.md`](./extra/task-logging.md) | Any task chat (an Ask Question, a manual conversation) can turn its outcome into a batch of dependency-numbered tasks that autopilot runs in order. |
 | [`extra/local-ci.md`](./extra/local-ci.md) | A per-project switch: the PR agent runs the project's CI steps locally instead of waiting on hosted CI, so hosted CI runs only on the default branch after the merge. |
 | [`extra/parallel-runs.md`](./extra/parallel-runs.md) | Running several tasks at once: pause and resume on provider usage limits, a per-project cap on concurrent heavy test suites, and a port range plus test-resource name per task. |
 | [`extra/refinement-agent.md`](./extra/refinement-agent.md) | An extra agent that polishes the work between review and PR. |

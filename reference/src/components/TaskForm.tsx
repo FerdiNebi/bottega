@@ -18,12 +18,17 @@ import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { MicButton } from './MicButton';
 import { isCoarsePointer } from '../utils/isCoarsePointer';
+import TaskAutopilotOptions, { type TaskAutopilotFlags } from './TaskAutopilotOptions';
 
 export interface TaskFormSubmitData {
   title: string;
   documentation: string;
   yolo_mode?: boolean;
+  autopilot_can_start?: boolean;
+  autopilot_can_work?: boolean;
 }
+
+const DEFAULT_AUTOPILOT: TaskAutopilotFlags = { autopilot_can_start: true, autopilot_can_work: true };
 
 export interface TaskFormSubmitResult {
   success: boolean;
@@ -48,6 +53,7 @@ function TaskForm({
   const [title, setTitle] = useState('');
   const [documentation, setDocumentation] = useState('');
   const [yoloMode, setYoloMode] = useState(false);
+  const [autopilot, setAutopilot] = useState<TaskAutopilotFlags>(DEFAULT_AUTOPILOT);
   const [error, setError] = useState<string | null>(null);
   const documentationRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -56,6 +62,7 @@ function TaskForm({
       setTitle('');
       setDocumentation('');
       setYoloMode(false);
+      setAutopilot(DEFAULT_AUTOPILOT);
       setError(null);
     }
   }, [isOpen]);
@@ -74,6 +81,8 @@ function TaskForm({
         title: title.trim(),
         documentation,
         yolo_mode: yoloMode,
+        autopilot_can_start: autopilot.autopilot_can_start,
+        autopilot_can_work: autopilot.autopilot_can_work,
       });
 
       if (!result.success) {
@@ -103,11 +112,11 @@ function TaskForm({
 
       {/* Modal */}
       <div
-        className="relative bg-card rounded-lg shadow-xl border border-border w-full max-w-md mx-4"
+        className="relative bg-card rounded-lg shadow-xl border border-border w-full max-w-md mx-4 flex flex-col max-h-[calc(100dvh-2rem)]"
         onKeyDown={handleKeyDown}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border">
+        <div className="flex items-center justify-between p-4 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-primary" />
             <h2 className="text-lg font-semibold text-foreground">
@@ -124,8 +133,10 @@ function TaskForm({
           </Button>
         </div>
 
-        {/* Content */}
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+        {/* Content scrolls; the actions stay pinned below it so Create is
+            always reachable on short (phone) screens. */}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+          <div className="p-4 space-y-4 overflow-y-auto min-h-0 flex-1">
           {/* Project context */}
           {projectName && (
             <div className="text-sm text-muted-foreground">
@@ -216,8 +227,12 @@ function TaskForm({
             </div>
           </div>
 
+          {/* Autopilot extra: per-task switches */}
+          <TaskAutopilotOptions value={autopilot} onChange={setAutopilot} idPrefix="task-form-autopilot" />
+          </div>
+
           {/* Actions */}
-          <div className="flex gap-2 pt-2">
+          <div className="flex gap-2 p-4 border-t border-border flex-shrink-0">
             <Button
               type="button"
               variant="outline"

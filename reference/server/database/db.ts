@@ -317,6 +317,16 @@ const runMigrations = (): void => {
       db.exec('ALTER TABLE tasks ADD COLUMN yolo_mode INTEGER DEFAULT 0 NOT NULL');
     }
 
+    if (!taskColumnNames.includes('autopilot_can_start')) {
+      console.log('Running migration: Adding autopilot_can_start column to tasks');
+      db.exec('ALTER TABLE tasks ADD COLUMN autopilot_can_start INTEGER DEFAULT 1 NOT NULL');
+    }
+
+    if (!taskColumnNames.includes('autopilot_can_work')) {
+      console.log('Running migration: Adding autopilot_can_work column to tasks');
+      db.exec('ALTER TABLE tasks ADD COLUMN autopilot_can_work INTEGER DEFAULT 1 NOT NULL');
+    }
+
     if (!taskColumnNames.includes('usage_limit_resume_at')) {
       console.log('Running migration: Adding usage-limit pause columns to tasks');
       db.exec(`
@@ -1204,6 +1214,14 @@ export interface CreatedTask {
   title: string | null;
   status: 'pending';
   yolo_mode: 0 | 1;
+  autopilot_can_start: 0 | 1;
+  autopilot_can_work: 0 | 1;
+}
+
+/** Autopilot extra, per-task switches; both default to on. */
+export interface TaskAutopilotOptions {
+  autopilotCanStart?: boolean | undefined;
+  autopilotCanWork?: boolean | undefined;
 }
 
 // Result of getAll (joins project name + repo path).
@@ -1230,6 +1248,8 @@ export interface TaskUpdates {
   learnings_complete?: 0 | 1 | boolean;
   completed_at?: string | null;
   yolo_mode?: 0 | 1 | boolean;
+  autopilot_can_start?: 0 | 1;
+  autopilot_can_work?: 0 | 1;
 }
 
 const tasksDb = {
@@ -1237,13 +1257,16 @@ const tasksDb = {
     projectId: number,
     title: string | null = null,
     yoloMode: boolean = false,
-    userId: number | null = null
+    userId: number | null = null,
+    autopilot: TaskAutopilotOptions = {},
   ): CreatedTask => {
     const stmt = db.prepare(
-      'INSERT INTO tasks (project_id, user_id, title, status, yolo_mode) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO tasks (project_id, user_id, title, status, yolo_mode, autopilot_can_start, autopilot_can_work) VALUES (?, ?, ?, ?, ?, ?, ?)'
     );
     const yoloFlag: 0 | 1 = yoloMode ? 1 : 0;
-    const result = stmt.run(projectId, userId, title, 'pending', yoloFlag);
+    const canStart: 0 | 1 = autopilot.autopilotCanStart === false ? 0 : 1;
+    const canWork: 0 | 1 = autopilot.autopilotCanWork === false ? 0 : 1;
+    const result = stmt.run(projectId, userId, title, 'pending', yoloFlag, canStart, canWork);
     return {
       id: lastInsertId(result.lastInsertRowid),
       projectId,
@@ -1251,6 +1274,8 @@ const tasksDb = {
       title,
       status: 'pending',
       yolo_mode: yoloFlag,
+      autopilot_can_start: canStart,
+      autopilot_can_work: canWork,
     };
   },
 
@@ -1306,6 +1331,8 @@ const tasksDb = {
       'learnings_complete',
       'completed_at',
       'yolo_mode',
+      'autopilot_can_start',
+      'autopilot_can_work',
     ];
     const setClause: string[] = [];
     const values: unknown[] = [];

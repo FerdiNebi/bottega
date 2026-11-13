@@ -14,7 +14,7 @@
 
 import { tasksDb, agentRunsDb, userDb, testSlotsDb } from '../../database/db.js';
 import { worktreeExists } from '../worktree.js';
-import { isAutopilotProject } from '../autopilotFlag.js';
+import { isAutopilotTask } from '../autopilotFlag.js';
 import { notifyClaudeComplete } from '../notifications.js';
 import { readTaskDoc } from '../documentation.js';
 import { phaseToContinue } from '../taskPhases.js';
@@ -167,7 +167,7 @@ async function handleAgentChaining(
   if (await autopilot.onAutopilotRunCompleted(taskId, agentType, context)) {
     return;
   }
-  const autopilotOn = !!task && isAutopilotProject(task.project_id);
+  const autopilotOn = isAutopilotTask(task);
 
   // Planification → implementation auto-chain for non-technical users.
   // Technical users keep the current manual-Run gate. The decision tracks

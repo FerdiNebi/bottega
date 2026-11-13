@@ -285,7 +285,7 @@ describe('Tasks Routes - Phase 3', () => {
 
       expect(response.status).toBe(201);
       expect(response.body).toEqual(newTask);
-      expect(tasksDb.create).toHaveBeenCalledWith(1, 'New Task', false, testUserId);
+      expect(tasksDb.create).toHaveBeenCalledWith(1, 'New Task', false, testUserId, { autopilotCanStart: undefined, autopilotCanWork: undefined });
       expect(writeTaskDoc).toHaveBeenCalledWith(1, 1, '');
     });
 
@@ -300,7 +300,7 @@ describe('Tasks Routes - Phase 3', () => {
         .send({});
 
       expect(response.status).toBe(201);
-      expect(tasksDb.create).toHaveBeenCalledWith(1, null, false, testUserId);
+      expect(tasksDb.create).toHaveBeenCalledWith(1, null, false, testUserId, { autopilotCanStart: undefined, autopilotCanWork: undefined });
     });
 
     it('should forward yolo_mode=true when provided in body', async () => {
@@ -315,7 +315,7 @@ describe('Tasks Routes - Phase 3', () => {
         .send({ title: 'YOLO Task', yolo_mode: true });
 
       expect(response.status).toBe(201);
-      expect(tasksDb.create).toHaveBeenCalledWith(1, 'YOLO Task', true, testUserId);
+      expect(tasksDb.create).toHaveBeenCalledWith(1, 'YOLO Task', true, testUserId, { autopilotCanStart: undefined, autopilotCanWork: undefined });
     });
 
     it('should return 404 if project not found', async () => {

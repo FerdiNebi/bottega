@@ -9,7 +9,7 @@
  */
 
 import { tasksDb, agentRunsDb, conversationsDb, userDb, projectsDb, appSettingsDb } from '../database/db.js';
-import { isAutopilotProject } from './autopilotFlag.js';
+import { isAutopilotTask } from './autopilotFlag.js';
 import { cancelUsageLimitPause } from './usageLimitPause.js';
 import { taskPortRange } from './taskResources.js';
 import { startConversation } from './conversationAdapter.js';
@@ -193,7 +193,7 @@ export async function startAgentRun(
 
   // Autopilot extra: nobody answers questions, so tell the agent to decide
   // for itself (and record the decisions) — see extra/autopilot.md.
-  const autopilot = isAutopilotProject(taskWithProject.project_id);
+  const autopilot = isAutopilotTask(taskWithProject);
   if (autopilot) {
     message = `${message}\n\n${renderPrompt('autopilot', { taskDocPath })}`;
   }
@@ -324,7 +324,12 @@ export async function startAgentRun(
   }
 
   // Build context prompt from task markdown + input files (central archive)
-  const contextPrompt = buildContextPrompt(taskWithProject.project_id, taskId);
+  // Under autopilot nobody can confirm a task list, so the run can't log tasks.
+  const contextPrompt = buildContextPrompt(
+    taskWithProject.project_id,
+    taskId,
+    autopilot ? {} : { taskLoggingFor: { title: taskWithProject.title } },
+  );
 
   // (provider, model, effort) loaded above before agentRunsDb.create
   // so the agent run row carries the right provider stamp.

@@ -9,7 +9,7 @@
 
 import { tasksDb, agentRunsDb, projectsDb } from '../database/db.js';
 import { startAgentRun } from './agentRunner.js';
-import { isAutopilotProject } from './autopilotFlag.js';
+import { isAutopilotTask } from './autopilotFlag.js';
 import { readTaskDoc } from './documentation.js';
 import {
   createWorktree,
@@ -77,6 +77,10 @@ export interface AutopilotPlan {
   ready: TaskRow[];
   waiting: TaskRow[];
   blocked: TaskRow[];
+  /** Pending tasks with `autopilot_can_start` off: they wait for a manual Run. */
+  held: TaskRow[];
+  /** Unfinished tasks with `autopilot_can_work` off: every step is manual. */
+  manual: TaskRow[];
 }
 
 const STARTED_STATUSES = new Set(['in_progress', 'in_review']);
@@ -86,11 +90,22 @@ export function planAutopilot(infos: AutopilotTaskInfo[]): AutopilotPlan {
   // A dependency that no longer exists can never complete, so it doesn't block.
   const resolved = (id: number) => !statusById.has(id) || statusById.get(id) === 'completed';
 
-  const plan: AutopilotPlan = { running: null, ready: [], waiting: [], blocked: [] };
+  const plan: AutopilotPlan = { running: null, ready: [], waiting: [], blocked: [], held: [], manual: [] };
   for (const info of infos) {
     const { task } = info;
     if (info.runningAgentType) {
       plan.running ??= { task, agentType: info.runningAgentType };
+      continue;
+    }
+    if (task.status === 'completed') continue;
+    // Per-task switches: autopilot never starts or resumes a manual task,
+    // and never moves a held one out of Pending.
+    if (task.autopilot_can_work === 0) {
+      plan.manual.push(task);
+      continue;
+    }
+    if (task.status === 'pending' && task.autopilot_can_start === 0) {
+      plan.held.push(task);
       continue;
     }
     if (task.status === 'pending') {
@@ -165,6 +180,8 @@ export async function getAutopilotStatus(project: ProjectRow): Promise<Autopilot
     readyCount: plan.ready.length,
     waitingCount: plan.waiting.length,
     blockedCount: plan.blocked.length,
+    heldCount: plan.held.length,
+    manualCount: plan.manual.length,
     message: project.autopilot_message,
   };
 }
@@ -235,20 +252,7 @@ async function startNextLocked(projectId: number, ctx: AutopilotContext): Promis
 
   const task = plan.ready[0];
   if (!task) {
-    let message: string;
-    // A milestone whose verification session started: in progress, no agent runs.
-    const verifying = tasksDb
-      .getByProject(projectId)
-      .filter((t) => isMilestoneTitle(t.title) && STARTED_STATUSES.has(t.status));
-    if (verifying.length > 0) {
-      message = `Stopped: waiting for manual verification of ${verifying.map(label).join(', ')}. When it works, finish it with Merge without PR, then press Start.`;
-    } else if (plan.waiting.length === 0 && plan.blocked.length === 0) {
-      message = 'Done: no tasks left to run.';
-    } else if (plan.blocked.length > 0) {
-      message = `Stopped: ${plan.blocked.map(label).join(', ')} blocked; ${plan.waiting.length} task(s) waiting on dependencies.`;
-    } else {
-      message = `Stopped: ${plan.waiting.length} task(s) wait on dependencies that aren't completed.`;
-    }
+    const message = idleMessage(projectId, plan);
     setMessage(projectId, message);
     return { status: 'idle', message };
   }
@@ -296,6 +300,25 @@ async function startNextLocked(projectId: number, ctx: AutopilotContext): Promis
   }
 }
 
+/** Why nothing is ready: verification, blocked, held/manual, waiting, or done. */
+function idleMessage(projectId: number, plan: AutopilotPlan): string {
+  // A milestone whose verification session started: in progress, no agent runs.
+  const verifying = tasksDb
+    .getByProject(projectId)
+    .filter(
+      (t) => isMilestoneTitle(t.title) && STARTED_STATUSES.has(t.status) && t.autopilot_can_work !== 0,
+    );
+  if (verifying.length > 0) {
+    return `Stopped: waiting for manual verification of ${verifying.map(label).join(', ')}. When it works, finish it with Merge without PR, then press Start.`;
+  }
+  const parts: string[] = [];
+  if (plan.blocked.length > 0) parts.push(`${plan.blocked.map(label).join(', ')} blocked`);
+  if (plan.held.length > 0) parts.push(`waiting for you to start ${plan.held.map(label).join(', ')}`);
+  if (plan.manual.length > 0) parts.push(`${plan.manual.map(label).join(', ')} manual`);
+  if (plan.waiting.length > 0) parts.push(`${plan.waiting.length} task(s) wait on dependencies that aren't completed`);
+  return parts.length === 0 ? 'Done: no tasks left to run.' : `Stopped: ${parts.join('; ')}.`;
+}
+
 /** Returns an error message, or null when the worktree is ready. */
 async function prepareWorktree(
   repoPath: string,
@@ -333,6 +356,7 @@ async function finishLocked(taskId: number, ctx: AutopilotContext): Promise<bool
   const projectId = task.project_id;
   const project = projectsDb.getByIdAdmin(projectId);
   if (!project || project.autopilot_enabled !== 1) return false;
+  if (task.autopilot_can_work === 0) return false;
 
   const repoPath = task.repo_folder_path;
   const merged = await mergeTask(repoPath, task, project.ci_mode);
@@ -429,7 +453,7 @@ export async function onAutopilotRunCompleted(
   ctx: AutopilotContext,
 ): Promise<boolean> {
   const task = tasksDb.getById(taskId);
-  if (!task || !isAutopilotProject(task.project_id)) return false;
+  if (!task || !isAutopilotTask(task)) return false;
   const projectId = task.project_id;
 
   if (agentType === 'pr' || agentType === 'yolo') {
@@ -458,7 +482,7 @@ export async function finishIfPrCompletedOutsideRun(
   ctx: AutopilotContext,
 ): Promise<boolean> {
   const task = tasksDb.getById(taskId);
-  if (!task || !isAutopilotProject(task.project_id)) return false;
+  if (!task || !isAutopilotTask(task)) return false;
   if (!task.pr_agent_complete || task.status === 'completed') return false;
   if (agentRunsDb.getByTask(taskId).some((r) => r.status === 'running')) return false;
   await finishAutopilotTask(taskId, ctx);
@@ -468,12 +492,12 @@ export async function finishIfPrCompletedOutsideRun(
 /** The finish pipeline would start the PR agent; without a remote, merge instead. */
 export async function shouldSkipPrAgent(taskId: number, repoPath: string): Promise<boolean> {
   const task = tasksDb.getById(taskId);
-  if (!task || !isAutopilotProject(task.project_id)) return false;
+  if (!task || !isAutopilotTask(task)) return false;
   return !(await hasOriginRemote(repoPath));
 }
 
 export function onAutopilotLoopStopped(taskId: number, reason: string): void {
   const task = tasksDb.getById(taskId);
-  if (!task || !isAutopilotProject(task.project_id)) return;
+  if (!task || !isAutopilotTask(task)) return;
   stopAutopilot(task.project_id, `${label(task)}: ${reason}`);
 }

@@ -17,6 +17,7 @@ import {
 import { upload } from '../middleware/upload.js';
 import { notifyTaskStatusChange } from '../services/notifications.js';
 import { forceCompleteRunningAgents } from '../services/agentRunner.js';
+import { noteTaskSwitchedToManual } from '../services/autopilotFlag.js';
 import {
   isGitRepository,
   createWorktree,
@@ -131,7 +132,8 @@ router.post(
         return res.status(404).json({ error: 'Project not found' } satisfies ApiError);
       }
 
-      const { title, description, yolo_mode } = req.validated!.body as CreateTaskBody;
+      const { title, description, yolo_mode, autopilot_can_start, autopilot_can_work } =
+        req.validated!.body as CreateTaskBody;
 
       const isGit = await isGitRepository(project.repo_folder_path);
 
@@ -140,6 +142,7 @@ router.post(
         title?.trim() || null,
         !!yolo_mode,
         userId,
+        { autopilotCanStart: autopilot_can_start, autopilotCanWork: autopilot_can_work },
       ) as unknown as { id: number; [k: string]: unknown };
 
       if (isGit) {
@@ -237,8 +240,18 @@ router.put(
       if (body.workflow_complete !== undefined) {
         updates.workflow_complete = body.workflow_complete ? 1 : 0;
       }
+      if (body.autopilot_can_start !== undefined) {
+        updates.autopilot_can_start = body.autopilot_can_start ? 1 : 0;
+      }
+      if (body.autopilot_can_work !== undefined) {
+        updates.autopilot_can_work = body.autopilot_can_work ? 1 : 0;
+      }
+      const switchedToManual =
+        body.autopilot_can_work === false && taskWithProject.autopilot_can_work === 1;
 
       const task = tasksDb.update(taskId, updates);
+
+      if (switchedToManual) noteTaskSwitchedToManual(taskId);
 
       if (updates.status && updates.status !== oldStatus) {
         notifyTaskStatusChange(userId, oldStatus, updates.status).catch(

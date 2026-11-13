@@ -7,7 +7,7 @@
  */
 
 import React, { useMemo } from 'react';
-import { MessageSquare, FileText, Pencil, GitBranch, Trash2, Flag, CircleDollarSign } from 'lucide-react';
+import { MessageSquare, FileText, Pencil, GitBranch, Trash2, Flag, CircleDollarSign, Hand } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { formatCost } from '../../utils/formatCost';
 import type { TaskRow } from '../../../shared/types/db';
@@ -161,6 +161,24 @@ function BoardTaskCard({
             </span>
           </div>
         )}
+
+        {/* Autopilot per-task switches: tasks autopilot leaves to the human */}
+        {task.status !== 'completed' &&
+          (task.autopilot_can_work === 0 || (task.status === 'pending' && task.autopilot_can_start === 0)) && (
+            <div className="flex items-center gap-1.5 text-xs">
+              <span
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-200 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200"
+                title={
+                  task.autopilot_can_work === 0
+                    ? 'Autopilot does not work on this task: every step is manual'
+                    : 'Autopilot does not start this task: press Run to start it'
+                }
+              >
+                <Hand className="w-3 h-3" />
+                {task.autopilot_can_work === 0 ? 'MANUAL' : 'MANUAL START'}
+              </span>
+            </div>
+          )}
 
         {/* Branch name */}
         {branchName && (

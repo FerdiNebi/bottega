@@ -201,6 +201,10 @@ export interface AutopilotStatusResponse {
   waitingCount: number;
   /** Started tasks with `workflow_blocked`. */
   blockedCount: number;
+  /** Pending tasks with `autopilot_can_start` off: they wait for a manual Run. */
+  heldCount: number;
+  /** Unfinished tasks with `autopilot_can_work` off: every step is manual. */
+  manualCount: number;
   /** The last start/merge/stop message. */
   message: string | null;
 }

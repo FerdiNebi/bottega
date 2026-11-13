@@ -169,6 +169,7 @@ vi.mock('lucide-react', () => ({
   BookOpen: () => <span data-testid="icon-book-open" />,
   Zap: () => <span data-testid="icon-zap" />,
   Flag: () => <span data-testid="icon-flag" />,
+  Bot: () => <span data-testid="icon-bot" />,
 }));
 
 describe('TaskDetailView Component', () => {
@@ -404,6 +405,25 @@ describe('TaskDetailView Component', () => {
       render(<TaskDetailView {...defaultProps} isLoadingConversations={true} />);
 
       expect(screen.getByTestId('conv-loading')).toBeInTheDocument();
+    });
+
+    it('holds the worktree bar and the PR buttons in place while their checks run', async () => {
+      vi.mocked(api.tasks.getWorktree).mockReturnValue(new Promise(() => {}) as never);
+      const { unmount } = render(<TaskDetailView {...defaultProps} />);
+      expect(screen.getByTestId('worktree-placeholder')).toBeInTheDocument();
+      unmount();
+
+      vi.mocked(api.tasks.getWorktree).mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({ success: true, branch: 'feature/x', ahead: 0, behind: 0, mainBranch: 'main', worktreePath: '/tmp/wt' }),
+      } as never);
+      vi.mocked(api.tasks.getPR).mockReturnValue(new Promise(() => {}) as never);
+      render(<TaskDetailView {...defaultProps} />);
+      expect(await screen.findByText('feature/x')).toBeInTheDocument();
+      expect(screen.queryByTestId('worktree-placeholder')).not.toBeInTheDocument();
+      expect(screen.getByText('Checking PR…').closest('button')).toBeDisabled();
+      expect(screen.queryByText('Create PR')).not.toBeInTheDocument();
     });
   });
 

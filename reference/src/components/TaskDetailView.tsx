@@ -17,6 +17,7 @@ import ConversationList from './ConversationList';
 import AgentSection from './AgentSection';
 import ReviewRecording from './ReviewRecording';
 import CIFixModal from './CIFixModal';
+import TaskAutopilotOptions, { type TaskAutopilotFlags } from './TaskAutopilotOptions';
 import { cn } from '../lib/utils';
 import { api } from '../utils/api';
 import { cleanupWorktreeOnComplete } from '../utils/worktreeCleanup';
@@ -102,6 +103,8 @@ export interface TaskDetailViewProps {
   onShowDocumentation?: () => void;
   onStatusChange?: (taskId: number, newStatus: TaskStatus) => Promise<unknown>;
   onWorkflowCompleteChange?: (taskId: number, value: boolean) => Promise<unknown>;
+  /** Autopilot extra: save the task's per-task switches. */
+  onAutopilotFlagsChange?: (taskId: number, flags: TaskAutopilotFlags) => Promise<unknown>;
   onResumeWorkflow?: (taskId: number) => Promise<unknown>;
   onNewConversation: () => void;
   onResumeConversation: (conversation: ConversationRow) => void;
@@ -140,6 +143,7 @@ function TaskDetailView({
   onShowDocumentation,
   onStatusChange,
   onWorkflowCompleteChange,
+  onAutopilotFlagsChange,
   onResumeWorkflow,
   onNewConversation,
   onResumeConversation,
@@ -152,12 +156,16 @@ function TaskDetailView({
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [isUpdatingWorkflow, setIsUpdatingWorkflow] = useState(false);
+  const [isUpdatingAutopilot, setIsUpdatingAutopilot] = useState(false);
   const [isResumingWorkflow, setIsResumingWorkflow] = useState(false);
 
   // Worktree state
   const [worktreeStatus, setWorktreeStatus] = useState<WorktreeSuccess | null>(null);
   const [prStatus, setPrStatus] = useState<PRStatus | null>(null);
-  const [, setIsLoadingWorktree] = useState(false);
+  // Both start true so the worktree bar and its PR buttons hold their place
+  // from the first paint instead of popping in once the (slow) checks return.
+  const [isLoadingWorktree, setIsLoadingWorktree] = useState(true);
+  const [isLoadingPr, setIsLoadingPr] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isCreatingPR, setIsCreatingPR] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
@@ -179,6 +187,8 @@ function TaskDetailView({
       if (!task?.id) return;
 
       setIsLoadingWorktree(true);
+      setIsLoadingPr(true);
+      setPrStatus(null);
       setWorktreeError(null);
       try {
         const response = await api.tasks.getWorktree(task.id);
@@ -186,11 +196,16 @@ function TaskDetailView({
           const data = await response.json();
           if (data.success) {
             setWorktreeStatus(data);
+            setIsLoadingWorktree(false);
             // Also fetch PR status
-            const prResponse = await api.tasks.getPR(task.id);
-            if (prResponse.ok) {
-              const prData = await prResponse.json();
-              setPrStatus(prData as PRStatus);
+            try {
+              const prResponse = await api.tasks.getPR(task.id);
+              if (prResponse.ok) {
+                const prData = await prResponse.json();
+                setPrStatus(prData as PRStatus);
+              }
+            } finally {
+              setIsLoadingPr(false);
             }
           } else {
             setWorktreeStatus(null);
@@ -203,6 +218,7 @@ function TaskDetailView({
         setWorktreeStatus(null);
       } finally {
         setIsLoadingWorktree(false);
+        setIsLoadingPr(false);
       }
     };
 
@@ -623,6 +639,16 @@ Please:
     }
   };
 
+  const handleAutopilotFlagsChange = async (flags: TaskAutopilotFlags) => {
+    if (!onAutopilotFlagsChange) return;
+    setIsUpdatingAutopilot(true);
+    try {
+      await onAutopilotFlagsChange(task.id, flags);
+    } finally {
+      setIsUpdatingAutopilot(false);
+    }
+  };
+
   const handleResumeWorkflow = async () => {
     if (!onResumeWorkflow) return;
 
@@ -768,6 +794,26 @@ Please:
         </div>
       </div>
 
+      {/* Worktree section placeholder: same shape as the real bar, so the page
+          doesn't shift down when the worktree status arrives. Completed tasks
+          usually have no worktree left, so they skip it. */}
+      {!worktreeStatus && isLoadingWorktree && task.status !== 'completed' && (
+        <div className="px-4 py-3 border-b border-border bg-muted/30" aria-busy="true" data-testid="worktree-placeholder">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <GitBranch className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+              <span className="h-6 w-40 bg-muted rounded animate-pulse" />
+            </div>
+            <div className="flex flex-wrap items-center gap-2 min-h-7 sm:ml-auto">
+              <Button variant="outline" size="sm" disabled className="h-7 text-xs">
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                Checking worktree…
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Worktree section - only show if worktree exists */}
       {worktreeStatus && (
         <div className="px-4 py-3 border-b border-border bg-muted/30">
@@ -800,7 +846,7 @@ Please:
             </div>
 
             {/* Actions */}
-            <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+            <div className="flex flex-wrap items-center gap-2 min-h-7 sm:ml-auto">
               {/* Pull button - syncs with main branch */}
               <Button
                 variant="outline"
@@ -817,8 +863,14 @@ Please:
                 Pull
               </Button>
 
-              {/* Create PR / View PR / Merge without PR */}
-              {!prStatus?.exists ? (
+              {/* Create PR / View PR / Merge without PR — a disabled stand-in
+                  holds the spot while the PR check (a `gh` call) runs */}
+              {isLoadingPr ? (
+                <Button variant="outline" size="sm" disabled className="h-7 text-xs" data-testid="pr-placeholder">
+                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                  Checking PR…
+                </Button>
+              ) : !prStatus?.exists ? (
                 <>
                   <Button
                     variant="outline"
@@ -1039,9 +1091,26 @@ Please:
             onShowClick={onShowDocumentation}
             isLoading={isLoadingDoc}
             placeholder="No task documentation yet. Click Edit to describe what needs to be done."
-            className="md:flex-1 md:min-h-0"
+            // A floor, so the sections below can never squeeze the editor to
+            // nothing and paint over its Documentation/Edit header; the panel
+            // scrolls instead.
+            className="md:flex-1 md:min-h-[14rem]"
             hideContentOnMobile
           />
+          {onAutopilotFlagsChange && task.status !== 'completed' && (
+            <div className="flex-shrink-0 border-t border-border px-4 py-2">
+              <TaskAutopilotOptions
+                compact
+                value={{
+                  autopilot_can_start: task.autopilot_can_start !== 0,
+                  autopilot_can_work: task.autopilot_can_work !== 0,
+                }}
+                onChange={handleAutopilotFlagsChange}
+                disabled={isUpdatingAutopilot}
+                idPrefix={`task-${task.id}-autopilot`}
+              />
+            </div>
+          )}
           {isMilestone ? (
             // A milestone is verified by hand, not run through the agent pipeline.
             <div className="flex-shrink-0 border-t border-border p-4 space-y-2">

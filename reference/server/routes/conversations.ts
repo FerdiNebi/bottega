@@ -63,7 +63,9 @@ const createTaskConversationHandler = createConversationHandler({
   getConversationById: (conversationId) =>
     conversationsDb.getById(conversationId) as unknown as { id: number; [k: string]: unknown },
   buildSystemPrompt: (_effectivePath, taskId, _projectPath, entityWithProject) =>
-    buildContextPrompt(entityWithProject.project_id, taskId),
+    buildContextPrompt(entityWithProject.project_id, taskId, {
+      taskLoggingFor: { title: entityWithProject.title ?? null },
+    }),
   startSession: (taskId, message, options) =>
     startConversation(taskId, message, options),
   getWorktreeTaskId: (taskId) => taskId,

@@ -75,6 +75,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     refinement_complete INTEGER DEFAULT 0 NOT NULL,
     learnings_complete INTEGER DEFAULT 0 NOT NULL,
     yolo_mode INTEGER DEFAULT 0 NOT NULL,
+    -- Autopilot extra, per-task switches: may autopilot start this task from
+    -- Pending, and may it work on it at all (0 = every step is manual).
+    autopilot_can_start INTEGER DEFAULT 1 NOT NULL,
+    autopilot_can_work INTEGER DEFAULT 1 NOT NULL,
     -- Parallel-runs extra: a run that hit the provider's usage limit pauses the
     -- task until this time (ISO-8601), then the same agent type runs again.
     usage_limit_resume_at TEXT DEFAULT NULL,

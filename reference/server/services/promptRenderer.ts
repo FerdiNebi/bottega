@@ -200,6 +200,13 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     variables: ['taskId', 'taskDocPath', 'scriptsDir', 'tsx'],
   },
   {
+    name: 'task-logging',
+    label: 'Task Logging Section',
+    kind: 'prompt',
+    file: 'task-logging.md',
+    variables: ['taskId', 'scriptsDir', 'tsx'],
+  },
+  {
     name: 'autopilot',
     label: 'Autopilot Addendum',
     kind: 'prompt',

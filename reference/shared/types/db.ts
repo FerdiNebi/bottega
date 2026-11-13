@@ -114,6 +114,10 @@ export interface TaskRow {
   refinement_complete: SqliteBoolean;
   learnings_complete: SqliteBoolean;
   yolo_mode: SqliteBoolean;
+  // Autopilot extra, per-task switches (both default 1): may autopilot start
+  // the task from Pending, and may it work on it at all.
+  autopilot_can_start: SqliteBoolean;
+  autopilot_can_work: SqliteBoolean;
   // Parallel-runs extra: set while the task waits out a provider usage limit.
   usage_limit_resume_at: string | null;
   usage_limit_agent_type: AgentType | null;

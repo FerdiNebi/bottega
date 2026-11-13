@@ -7,6 +7,7 @@ import type { TaskRow } from '../../../shared/types/db';
 vi.mock('lucide-react', () => ({
   MessageSquare: () => <span data-testid="icon-message-square" />,
   Flag: () => <span data-testid="icon-flag" />,
+  Hand: () => <span data-testid="icon-hand" />,
   FileText: () => <span data-testid="icon-file-text" />,
   Pencil: () => <span data-testid="icon-pencil" />,
   CircleDollarSign: () => <span data-testid="icon-dollar" />,

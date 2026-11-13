@@ -39,7 +39,7 @@ vi.mock('../documentation.js', () => ({
 }));
 
 vi.mock('../autopilotFlag.js', () => ({
-  isAutopilotProject: vi.fn().mockReturnValue(false)
+  isAutopilotTask: vi.fn().mockReturnValue(false)
 }));
 
 vi.mock('../autopilot.js', () => ({
@@ -58,7 +58,7 @@ import { tasksDb, agentRunsDb, userDb, testSlotsDb } from '../../database/db.js'
 import { worktreeExists } from '../worktree.js';
 import { notifyClaudeComplete } from '../notifications.js';
 import { startAgentRun, getRunningAgentForTask } from '../agentRunner.js';
-import { isAutopilotProject } from '../autopilotFlag.js';
+import { isAutopilotTask } from '../autopilotFlag.js';
 import { readTaskDoc } from '../documentation.js';
 import {
   onAutopilotRunCompleted,
@@ -75,7 +75,7 @@ beforeEach(() => {
   vi.mocked(worktreeExists).mockResolvedValue(false);
   vi.mocked(getRunningAgentForTask).mockReturnValue(null);
   vi.mocked(startAgentRun).mockResolvedValue(undefined as never);
-  vi.mocked(isAutopilotProject).mockReturnValue(false);
+  vi.mocked(isAutopilotTask).mockReturnValue(false);
   vi.mocked(onAutopilotRunCompleted).mockResolvedValue(false);
   vi.mocked(shouldSkipPrAgent).mockResolvedValue(false);
   vi.mocked(finishIfPrCompletedOutsideRun).mockResolvedValue(false);
@@ -567,7 +567,7 @@ describe('autopilot hooks (extra/autopilot.md)', () => {
     vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, project_id: 3, workflow_run_count: 1 } as never);
     vi.mocked(tasksDb.getWithProject).mockReturnValue({ repo_folder_path: '/r', user_id: 1 } as never);
     vi.mocked(userDb.getUserById).mockReturnValue({ id: 1, is_technical: 1 } as never);
-    vi.mocked(isAutopilotProject).mockReturnValue(true);
+    vi.mocked(isAutopilotTask).mockReturnValue(true);
 
     await buildAgentRunCompletionHandler(ctx())();
     await vi.advanceTimersByTimeAsync(1000);
@@ -578,7 +578,7 @@ describe('autopilot hooks (extra/autopilot.md)', () => {
   it('does not chain when autopilot handled the transition', async () => {
     runs('planification');
     vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, project_id: 3 } as never);
-    vi.mocked(isAutopilotProject).mockReturnValue(true);
+    vi.mocked(isAutopilotTask).mockReturnValue(true);
     vi.mocked(onAutopilotRunCompleted).mockResolvedValue(true);
 
     await buildAgentRunCompletionHandler(ctx())();

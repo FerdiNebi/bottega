@@ -1,6 +1,13 @@
 import { z } from 'zod';
 import { isMilestoneTitle } from '../../shared/milestones.js';
-import { buildTaskDoc, cleanTaskTitle, type DependencyRef, type SessionTaskInfo } from './taskBreakdown.js';
+import {
+  appendTaskLink,
+  buildTaskDoc,
+  cleanTaskTitle,
+  parseTaskLinks,
+  type DependencyRef,
+  type SessionTaskInfo,
+} from './taskBreakdown.js';
 
 /**
  * Follow-up tasks of a milestone verification session (extra/project-bootstrap.md,
@@ -20,8 +27,7 @@ const FollowUpTaskSchema = z.object({
 
 export type FollowUpTaskInput = z.infer<typeof FollowUpTaskSchema>;
 
-const FOLLOW_UPS_HEADING = /^##\s+follow-up tasks\s*$/i;
-const SECTION_END = /^#{1,2}\s/;
+const FOLLOW_UPS_HEADING = 'Follow-up tasks';
 
 /** Task doc of a follow-up: the spec, no dependencies, and where it came from. */
 export function buildFollowUpDoc(spec: string, milestone: DependencyRef): string {
@@ -30,38 +36,12 @@ export function buildFollowUpDoc(spec: string, milestone: DependencyRef): string
 
 /** Add `- <title> (task #N)` to the doc's `## Follow-up tasks` section, creating it at the end when missing. */
 export function appendFollowUp(doc: string, task: DependencyRef): string {
-  const entry = `- ${task.title} (task #${task.id})`;
-  const trimmed = doc.replace(/\s+$/, '');
-  if (trimmed === '') return `## Follow-up tasks\n\n${entry}\n`;
-
-  const lines = trimmed.split(/\r?\n/);
-  const start = lines.findIndex((line) => FOLLOW_UPS_HEADING.test(line.trim()));
-  if (start === -1) return `${trimmed}\n\n## Follow-up tasks\n\n${entry}\n`;
-
-  let end = lines.findIndex((line, i) => i > start && SECTION_END.test(line.trim()));
-  if (end === -1) end = lines.length;
-  let insertAt = end;
-  while (insertAt > start + 1 && lines[insertAt - 1]!.trim() === '') insertAt--;
-
-  const inserted = insertAt === start + 1 ? ['', entry] : [entry];
-  if (insertAt < lines.length && lines[insertAt]!.trim() !== '') inserted.push('');
-  lines.splice(insertAt, 0, ...inserted);
-  return `${lines.join('\n')}\n`;
+  return appendTaskLink(doc, FOLLOW_UPS_HEADING, task);
 }
 
 /** Task ids referenced as `(task #N)` in the doc's `## Follow-up tasks` section. */
 export function parseFollowUps(doc: string): number[] {
-  const lines = doc.split(/\r?\n/);
-  const start = lines.findIndex((line) => FOLLOW_UPS_HEADING.test(line.trim()));
-  if (start === -1) return [];
-  const ids: number[] = [];
-  for (const line of lines.slice(start + 1)) {
-    if (SECTION_END.test(line.trim())) break;
-    for (const match of line.matchAll(/task\s*#(\d+)/gi)) {
-      ids.push(Number(match[1]));
-    }
-  }
-  return [...new Set(ids)];
+  return parseTaskLinks(doc, FOLLOW_UPS_HEADING);
 }
 
 // ---- Shared lookup ----------------------------------------------------------
