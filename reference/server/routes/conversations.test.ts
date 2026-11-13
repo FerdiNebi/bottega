@@ -263,7 +263,7 @@ describe('Conversations Routes - Phase 3', () => {
           .post('/api/tasks/1/conversations')
           .send({ message: 'Test message', provider: 'anthropic', model: 'opus' });
 
-        expect(buildContextPrompt).toHaveBeenCalledWith(1, 1);
+        expect(buildContextPrompt).toHaveBeenCalledWith(1, 1, expect.objectContaining({ taskLoggingFor: expect.any(Object) }));
       });
 
       it('should use default permissionMode when not provided', async () => {

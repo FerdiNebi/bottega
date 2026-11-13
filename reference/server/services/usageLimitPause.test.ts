@@ -29,7 +29,7 @@ vi.mock('../database/db.js', () => ({
 }));
 
 vi.mock('./autopilotFlag.js', () => ({
-  isAutopilotProject: vi.fn(() => state.autopilot),
+  isAutopilotTask: vi.fn(() => state.autopilot),
 }));
 
 vi.mock('./agentRunner.js', () => ({

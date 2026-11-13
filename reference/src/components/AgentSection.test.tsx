@@ -485,14 +485,17 @@ describe('AgentSection', () => {
   });
 
   describe('Loading State', () => {
-    it('should show loading skeleton when isLoading is true', () => {
+    it('keeps the agent list in place with its buttons disabled while loading', () => {
       render(<AgentSection {...defaultProps} isLoading={true} />);
 
       expect(screen.getByText('Agents')).toBeInTheDocument();
-      // Should show loading skeleton instead of agent list
-      expect(screen.queryByText('Planification')).not.toBeInTheDocument();
-      expect(screen.queryByText('Implementation')).not.toBeInTheDocument();
-      expect(screen.queryByText('Review')).not.toBeInTheDocument();
+      expect(screen.getByText('Agents').closest('[aria-busy]')).toHaveAttribute('aria-busy', 'true');
+      // The rows stay, so the panel keeps its height
+      expect(screen.getByText('Planification')).toBeInTheDocument();
+      expect(screen.getByText('Implementation')).toBeInTheDocument();
+      for (const button of screen.getAllByRole('button', { name: /run/i })) {
+        expect(button).toBeDisabled();
+      }
     });
   });
 

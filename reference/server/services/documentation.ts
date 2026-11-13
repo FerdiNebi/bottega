@@ -1,7 +1,8 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { toPromptPath } from './promptRenderer.js';
+import { renderPrompt, toPromptPath } from './promptRenderer.js';
+import { canLogTasksFrom } from './taskLogging.js';
 import { BOTTEGA_APP_DIR, getProtectedProcesses } from './processGuard.js';
 
 const TASKS_FOLDER = 'tasks';
@@ -305,7 +306,20 @@ export function getDevServerPort(taskId: number): number {
  * Build a context prompt from task documentation and input files.
  * Task doc + input files live in the central archive (per-user).
  */
-export function buildContextPrompt(projectId: number, taskId: number): string {
+export interface ContextPromptOptions {
+  /**
+   * Task-logging extra: pass the task's title to offer the "Logging New
+   * Tasks" section (left out for milestone tasks and "Create initial tasks"
+   * sessions, which have their own scripts). Omit to leave it out.
+   */
+  taskLoggingFor?: { title: string | null } | undefined;
+}
+
+export function buildContextPrompt(
+  projectId: number,
+  taskId: number,
+  options: ContextPromptOptions = {},
+): string {
   const devServerPort = getDevServerPort(taskId);
 
   const sections: string[] = [];
@@ -346,6 +360,10 @@ You are running inside Bottega, which listens on port${bottega.ports.length > 1 
 - Never edit Bottega's own files (anything under \`${toPromptPath(BOTTEGA_APP_DIR)}\`) unless that is the repository you are working in. If Bottega itself seems to need a change, say so in your reply instead.
 - Never print or read credentials: no \`gh auth token\`, \`git credential fill\`, \`~/.git-credentials\`, Bottega's token files, \`echo $GH_TOKEN\` or full \`env\` dumps. Whatever you print is saved in the conversation. \`gh\` and \`git\` are already logged in, so run them directly; if they fail to authenticate, say so in your reply and stop.
 - If the app you're working on fails with EADDRINUSE on ${bottega.ports.join(' or ')}, don't free the port: start it on your dev server port (${devServerPort}) instead, e.g. \`PORT=${devServerPort}\`, and point its clients/tests at that port.`);
+
+  if (options.taskLoggingFor && canLogTasksFrom(options.taskLoggingFor.title)) {
+    sections.push(renderPrompt('task-logging', { taskId }).trim());
+  }
 
   sections.push(`## Testing Configuration
 

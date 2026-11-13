@@ -34,18 +34,23 @@ export function describeAutopilot(status: AutopilotStatusResponse): string {
     return `Running task #${status.running.taskId}${title} (${status.running.agentType})`;
   }
   if (status.message) return status.message;
+  // Tasks autopilot leaves to you (per-task switches).
+  const manual = [
+    status.heldCount > 0 ? `${status.heldCount} for manual start` : null,
+    status.manualCount > 0 ? `${status.manualCount} manual` : null,
+  ].filter(Boolean);
+  const manualNote = manual.length > 0 ? `, ${manual.join(', ')}` : '';
   if (status.next) {
     const title = status.next.title ? ` "${status.next.title}"` : '';
-    return `Next: task #${status.next.taskId}${title} · ${status.readyCount} ready, ${status.waitingCount} waiting`;
+    return `Next: task #${status.next.taskId}${title} · ${status.readyCount} ready, ${status.waitingCount} waiting${manualNote}`;
   }
-  return status.waitingCount > 0
-    ? `${status.waitingCount} task(s) waiting on dependencies`
-    : 'No tasks to run';
+  if (status.waitingCount > 0) return `${status.waitingCount} task(s) waiting on dependencies${manualNote}`;
+  return manual.length > 0 ? `No tasks for autopilot: ${manual.join(', ')}` : 'No tasks to run';
 }
 
 function startTooltip(status: AutopilotStatusResponse): string {
   if (status.running) return `Task #${status.running.taskId} is running`;
-  if (!status.next) return 'No task is ready (all done, or waiting on dependencies)';
+  if (!status.next) return 'No task is ready (all done, waiting on dependencies, or left to you)';
   return `Start task #${status.next.taskId}, then keep going`;
 }
 
@@ -53,6 +58,7 @@ function AutopilotControls({ projectId, onActivity, onCredentialsMissing }: Auto
   const [status, setStatus] = useState<AutopilotStatusResponse | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const activityKey = useRef<string | null>(null);
 
   const applyStatus = useCallback(
@@ -73,6 +79,8 @@ function AutopilotControls({ projectId, onActivity, onCredentialsMissing }: Auto
       if (response.ok) applyStatus(await response.json());
     } catch (err) {
       console.error('Error loading autopilot status:', err);
+    } finally {
+      setHasLoaded(true);
     }
   }, [projectId, applyStatus]);
 
@@ -128,12 +136,26 @@ function AutopilotControls({ projectId, onActivity, onCredentialsMissing }: Auto
     }
   };
 
+  // Still loading: hold the row's place with a disabled switch, so the board
+  // columns don't shift down when the status arrives.
+  if (!status && !hasLoaded) {
+    return (
+      <div className="flex items-center gap-2 min-h-7" role="group" aria-label="Autopilot" aria-busy="true">
+        <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <input type="checkbox" disabled className="h-3.5 w-3.5 rounded border-border" />
+          <Rocket className="w-3.5 h-3.5" />
+          Autopilot
+        </label>
+      </div>
+    );
+  }
   if (!status?.isGitRepository) return null;
 
   const line = error ?? describeAutopilot(status);
 
   return (
-    <div className="flex flex-wrap items-center gap-2 min-w-0" role="group" aria-label="Autopilot">
+    // min-h-7: the Start button appearing on tick doesn't change the row height
+    <div className="flex flex-wrap items-center gap-2 min-w-0 min-h-7" role="group" aria-label="Autopilot">
       <label
         className="flex items-center gap-1.5 text-xs font-medium cursor-pointer"
         title="Run tasks in dependency order without questions; merge each when its tests pass"

@@ -116,6 +116,7 @@ scripts/
   complete-pr.ts         Set pr_agent_complete=1 (agents run this)
   create-tasks.ts        Create a bootstrap task breakdown (agents run this)
   milestone-task.ts      Create/list follow-up tasks of a milestone, sync its worktree (agents run this)
+  log-tasks.ts           Log a dependency-numbered batch of tasks from any task chat, list them (agents run this)
   data-migrations/       One-shot scripts (e.g. import-jsonl-to-sqlite.ts)
   guard-no-js.ts         CI prelint: rejects .js files outside the allowlist
 

@@ -133,6 +133,15 @@ function TaskDetailPage() {
     return await updateTask(taskIdParam, { status: newStatus });
   }, [updateTask]);
 
+  const handleAutopilotFlagsChange = useCallback(
+    async (taskIdParam: number, flags: { autopilot_can_start: boolean; autopilot_can_work: boolean }) => {
+      const result = await updateTask(taskIdParam, flags);
+      if (!result.success) toast.error(result.error || 'Failed to update the autopilot settings');
+      return result;
+    },
+    [updateTask, toast],
+  );
+
   const handleEditDocumentation = useCallback(() => {
     if (task) {
       navigate(`/projects/${projectId}/tasks/${taskId}/edit`);
@@ -313,6 +322,7 @@ function TaskDetailPage() {
         onShowDocumentation={handleShowDocumentation}
         onStatusChange={handleStatusChange}
         onWorkflowCompleteChange={handleWorkflowCompleteChange}
+        onAutopilotFlagsChange={handleAutopilotFlagsChange}
         onResumeWorkflow={handleResumeWorkflow}
         onNewConversation={handleNewConversation}
         onResumeConversation={handleResumeConversation}

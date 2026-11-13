@@ -51,6 +51,8 @@ interface CreateTaskFormPayload {
   title: string;
   documentation?: string;
   yolo_mode?: boolean;
+  autopilot_can_start?: boolean;
+  autopilot_can_work?: boolean;
 }
 
 interface ActionResult {
@@ -88,6 +90,8 @@ function BoardView({ className, project }: BoardViewProps) {
   // Project bootstrap (PRD / ARD / initial tasks) state
   const [bootstrapStatus, setBootstrapStatus] = useState<BootstrapStatusResponse | null>(null);
   const [isCheckingBootstrap, setIsCheckingBootstrap] = useState(false);
+  // Until the first check returns, the docs buttons show disabled in place.
+  const [hasCheckedBootstrap, setHasCheckedBootstrap] = useState(false);
   const [bootstrapKind, setBootstrapKind] = useState<BootstrapKind | null>(null);
   const [isStartingBootstrap, setIsStartingBootstrap] = useState(false);
 
@@ -163,12 +167,14 @@ function BoardView({ className, project }: BoardViewProps) {
     setIsCheckingBootstrap(true);
     try {
       const response = await api.projects.getBootstrap(project.id);
-      setBootstrapStatus(response.ok ? await response.json() : null);
+      // A failed re-check keeps the last answer: the buttons stay put
+      // instead of vanishing and coming back.
+      if (response.ok) setBootstrapStatus(await response.json());
     } catch (error) {
       console.error('Error loading bootstrap status:', error);
-      setBootstrapStatus(null);
     } finally {
       setIsCheckingBootstrap(false);
+      setHasCheckedBootstrap(true);
     }
   }, [project]);
 
@@ -294,6 +300,8 @@ function BoardView({ className, project }: BoardViewProps) {
       title,
       documentation,
       yolo_mode,
+      autopilot_can_start,
+      autopilot_can_work,
     }: CreateTaskFormPayload): Promise<ActionResult> => {
       if (!project) return { success: false, error: 'No project selected' };
 
@@ -303,6 +311,8 @@ function BoardView({ className, project }: BoardViewProps) {
         if (yolo_mode !== undefined) {
           options.yolo_mode = yolo_mode;
         }
+        if (autopilot_can_start !== undefined) options.autopilot_can_start = autopilot_can_start;
+        if (autopilot_can_work !== undefined) options.autopilot_can_work = autopilot_can_work;
         const result = await createTask(project.id, title, documentation, options);
         if (result.success) {
           setShowTaskForm(false);
@@ -427,9 +437,11 @@ function BoardView({ className, project }: BoardViewProps) {
   ].filter(Boolean);
   const canCreateInitialTasks = !!bootstrapStatus && missingDocs.length === 0;
   const defaultBranch = bootstrapStatus?.defaultBranch || 'the default branch';
-  const initialTasksTooltip = canCreateInitialTasks
-    ? 'Break the PRD and ARD down into dependency-ordered tasks'
-    : `Merge ${missingDocs.join(' and ')} into ${defaultBranch} first`;
+  const initialTasksTooltip = !bootstrapStatus
+    ? 'Checking the project docs…'
+    : canCreateInitialTasks
+      ? 'Break the PRD and ARD down into dependency-ordered tasks'
+      : `Merge ${missingDocs.join(' and ')} into ${defaultBranch} first`;
 
   // Autopilot moved on (task started, merged, stopped): refresh the columns.
   const handleAutopilotActivity = useCallback(() => {
@@ -467,7 +479,7 @@ function BoardView({ className, project }: BoardViewProps) {
               <ArrowLeft className="w-4 h-4" />
             </Button>
             <div className="flex items-center gap-2 min-w-0">
-              <Columns className="w-5 h-5 text-primary flex-shrink-0" />
+              <Columns className="hidden sm:block w-5 h-5 text-primary flex-shrink-0" />
               <h1 className="font-semibold text-lg truncate">{project.name}</h1>
             </div>
           </div>
@@ -537,11 +549,11 @@ function BoardView({ className, project }: BoardViewProps) {
         </div>
 
         {/* Project path + Project docs (bootstrap) group */}
-        <div className="flex flex-wrap items-center justify-between gap-2 mt-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 mt-3 min-h-7">
           <p className="text-xs text-muted-foreground truncate min-w-0">
             {project.repo_folder_path}
           </p>
-          {bootstrapStatus?.isGitRepository && (
+          {(bootstrapStatus?.isGitRepository || (!bootstrapStatus && !hasCheckedBootstrap)) && (
             <div
               className="flex flex-wrap items-center gap-1.5"
               role="group"
@@ -551,6 +563,7 @@ function BoardView({ className, project }: BoardViewProps) {
                 variant="outline"
                 size="sm"
                 onClick={() => setBootstrapKind('prd')}
+                disabled={!bootstrapStatus}
                 className="h-7 text-xs"
                 title="Interview-driven Product Requirements Document (PRD.md)"
               >
@@ -561,6 +574,7 @@ function BoardView({ className, project }: BoardViewProps) {
                 variant="outline"
                 size="sm"
                 onClick={() => setBootstrapKind('ard')}
+                disabled={!bootstrapStatus}
                 className="h-7 text-xs"
                 title="Architecture Requirements Document (ARD.md)"
               >
@@ -587,7 +601,7 @@ function BoardView({ className, project }: BoardViewProps) {
                 disabled={isCheckingBootstrap}
                 className="h-7 w-7 p-0"
                 title={
-                  bootstrapStatus.stale
+                  bootstrapStatus?.stale
                     ? `Could not fetch origin — showing local ${defaultBranch}. Re-check`
                     : `Re-check ${defaultBranch}`
                 }

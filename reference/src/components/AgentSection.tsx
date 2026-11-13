@@ -145,21 +145,18 @@ function AgentSection({
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className={cn('p-4 border-t border-border', className)}>
-        <h3 className="text-sm font-medium text-foreground mb-3">Agents</h3>
-        <div className="animate-pulse space-y-2">
-          <div className="h-16 bg-muted rounded-lg" />
-        </div>
-      </div>
-    );
-  }
-
+  // While runs load (first load and every reload after a run starts) keep the
+  // full list on screen with its buttons disabled, so the panel keeps its
+  // height instead of collapsing to a skeleton and growing back.
   return (
-    <div className={cn('p-4 border-t border-border min-w-0', className)}>
+    <div className={cn('p-4 border-t border-border min-w-0', className)} aria-busy={isLoading}>
       <div className="flex items-baseline justify-between mb-3">
-        <h3 className="text-sm font-medium text-foreground">Agents</h3>
+        <h3 className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+          Agents
+          {isLoading && (
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" data-testid="agents-loading" />
+          )}
+        </h3>
         {totalCost && (
           <span
             className="text-xs text-muted-foreground"
@@ -284,7 +281,7 @@ function AgentSection({
                   variant={isCompleted ? 'ghost' : isFailed ? 'ghost' : 'outline'}
                   size="sm"
                   onClick={() => handleRunAgent(agent)}
-                  disabled={isRunning || isInProgress}
+                  disabled={isLoading || isRunning || isInProgress}
                   className={cn(
                     'gap-2',
                     isCompleted && 'text-green-600 dark:text-green-400',

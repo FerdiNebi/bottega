@@ -21,6 +21,7 @@ interface EntityWithProject {
   project_id: number;
   repo_folder_path: string;
   subproject_path?: string | null;
+  title?: string | null;
 }
 
 interface ConversationRecord {

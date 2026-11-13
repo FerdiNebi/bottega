@@ -31,6 +31,8 @@ function status(overrides: Partial<AutopilotStatusResponse> = {}): AutopilotStat
     readyCount: 2,
     waitingCount: 3,
     blockedCount: 0,
+    heldCount: 0,
+    manualCount: 0,
     message: null,
     ...overrides,
   };
@@ -63,8 +65,15 @@ describe('AutopilotControls', () => {
       mockTypedResponse(status({ isGitRepository: false }))
     );
     const { container } = render(<AutopilotControls projectId={1} />);
-    await waitFor(() => expect(api.projects.getAutopilot).toHaveBeenCalledWith(1));
-    expect(container).toBeEmptyDOMElement();
+    await waitFor(() => expect(container).toBeEmptyDOMElement());
+  });
+
+  it('holds its place with a disabled switch while the status loads', () => {
+    vi.mocked(api.projects.getAutopilot).mockReturnValue(new Promise(() => {}) as never);
+    render(<AutopilotControls projectId={1} />);
+    const group = screen.getByRole('group', { name: 'Autopilot' });
+    expect(group).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('checkbox')).toBeDisabled();
   });
 
   it('asks for confirmation before turning autopilot on', async () => {

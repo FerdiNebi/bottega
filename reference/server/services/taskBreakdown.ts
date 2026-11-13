@@ -263,6 +263,56 @@ export function buildTaskDoc(spec: string, dependencies: DependencyRef[]): strin
   return `${spec.trim()}\n\n## Depends on\n\n${lines.join('\n')}\n`;
 }
 
+// ---- Task links between docs --------------------------------------------------
+
+const SECTION_END = /^#{1,2}\s/;
+
+function headingPattern(heading: string): RegExp {
+  const escaped = heading.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  return new RegExp(`^##\\s+${escaped}\\s*$`, 'i');
+}
+
+/**
+ * Add `- <title> (task #N)` to the doc's `## <heading>` section (e.g. a
+ * milestone's `## Follow-up tasks`), creating the section at the end when missing.
+ */
+export function appendTaskLink(doc: string, heading: string, task: DependencyRef): string {
+  const entry = `- ${task.title} (task #${task.id})`;
+  const trimmed = doc.replace(/\s+$/, '');
+  if (trimmed === '') return `## ${heading}\n\n${entry}\n`;
+
+  const pattern = headingPattern(heading);
+  const lines = trimmed.split(/\r?\n/);
+  const start = lines.findIndex((line) => pattern.test(line.trim()));
+  if (start === -1) return `${trimmed}\n\n## ${heading}\n\n${entry}\n`;
+
+  let end = lines.findIndex((line, i) => i > start && SECTION_END.test(line.trim()));
+  if (end === -1) end = lines.length;
+  let insertAt = end;
+  while (insertAt > start + 1 && lines[insertAt - 1]!.trim() === '') insertAt--;
+
+  const inserted = insertAt === start + 1 ? ['', entry] : [entry];
+  if (insertAt < lines.length && lines[insertAt]!.trim() !== '') inserted.push('');
+  lines.splice(insertAt, 0, ...inserted);
+  return `${lines.join('\n')}\n`;
+}
+
+/** Task ids referenced as `(task #N)` in the doc's `## <heading>` section. */
+export function parseTaskLinks(doc: string, heading: string): number[] {
+  const pattern = headingPattern(heading);
+  const lines = doc.split(/\r?\n/);
+  const start = lines.findIndex((line) => pattern.test(line.trim()));
+  if (start === -1) return [];
+  const ids: number[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (SECTION_END.test(line.trim())) break;
+    for (const match of line.matchAll(/task\s*#(\d+)/gi)) {
+      ids.push(Number(match[1]));
+    }
+  }
+  return [...new Set(ids)];
+}
+
 // ---- Creation ---------------------------------------------------------------
 
 export interface SessionTaskInfo {

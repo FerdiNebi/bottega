@@ -98,7 +98,7 @@ vi.mock('./usageLimitPause.js', () => ({
 }));
 
 vi.mock('./autopilotFlag.js', () => ({
-  isAutopilotProject: vi.fn().mockReturnValue(false),
+  isAutopilotTask: vi.fn().mockReturnValue(false),
 }));
 
 import {
@@ -121,7 +121,7 @@ import {
 import { getWorktreeProjectPath, worktreeExists } from './worktree.js';
 import { validateClaudeCredentials } from './claudeCredentials.js';
 import { loadAgentModelSettings } from './agentModelSettings.js';
-import { isAutopilotProject } from './autopilotFlag.js';
+import { isAutopilotTask } from './autopilotFlag.js';
 import { cancelUsageLimitPause } from './usageLimitPause.js';
 
 describe('agentRunner', () => {
@@ -294,7 +294,7 @@ describe('agentRunner', () => {
     it('should build context prompt with project id and task id', async () => {
       await startAgentRun(1, 'implementation');
 
-      expect(buildContextPrompt).toHaveBeenCalledWith(1, 1);
+      expect(buildContextPrompt).toHaveBeenCalledWith(1, 1, expect.objectContaining({ taskLoggingFor: expect.any(Object) }));
     });
 
     it('should pass the central-archive task doc path to the agent prompt', async () => {
@@ -506,11 +506,13 @@ describe('agentRunner', () => {
     });
 
     it('appends the autopilot section and bans AskUserQuestion on autopilot projects', async () => {
-      vi.mocked(isAutopilotProject).mockReturnValueOnce(true);
+      vi.mocked(isAutopilotTask).mockReturnValueOnce(true);
 
       await startAgentRun(1, 'implementation');
 
-      expect(isAutopilotProject).toHaveBeenCalledWith(1);
+      expect(isAutopilotTask).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
+      // Nobody can confirm a task list under autopilot: no task-logging section.
+      expect(buildContextPrompt).toHaveBeenCalledWith(1, 1, {});
       const [, message, options] = vi.mocked(startConversation).mock.calls[0]!;
       expect(message.startsWith('implementation message\n\n## Autopilot')).toBe(true);
       expect(message).toContain('/archive/projects/1/tasks/task-1.md');

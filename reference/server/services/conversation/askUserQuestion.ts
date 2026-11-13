@@ -1,5 +1,5 @@
 import { agentRunsDb, conversationsDb, tasksDb } from '../../database/db.js';
-import { isAutopilotProject } from '../autopilotFlag.js';
+import { isAutopilotTask } from '../autopilotFlag.js';
 import { resolveProjectKey } from '../conversationContentStore.js';
 import { sqliteSessionStore } from '../sqliteSessionStore.js';
 import { pendingAskUserQuestions } from './sessionState.js';
@@ -48,8 +48,7 @@ export const AUTOPILOT_DENY_MESSAGE =
 function isAutopilotAgentRun(conversationId: ConversationId): boolean {
   if (!agentRunsDb.getByConversationId(conversationId)) return false;
   const taskId = conversationsDb.getById(conversationId)?.task_id;
-  const projectId = taskId != null ? tasksDb.getById(taskId)?.project_id : undefined;
-  return projectId != null && isAutopilotProject(projectId);
+  return taskId != null && isAutopilotTask(tasksDb.getById(taskId));
 }
 
 /** Passed to the SDK as `canUseTool`: it only offers AskUserQuestion when a callback is set. */

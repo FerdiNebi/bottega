@@ -183,6 +183,21 @@ describe('Documentation Service - Phase 2', () => {
       expect(result).not.toContain('## Task Context');
     });
 
+    it('offers the task-logging section only when asked, and not to milestone or breakdown tasks', () => {
+      expect(buildContextPrompt(testProjectId, 7)).not.toContain('## Logging New Tasks');
+
+      const result = buildContextPrompt(testProjectId, 7, { taskLoggingFor: { title: 'Ask about checkout' } });
+      expect(result).toContain('## Logging New Tasks');
+      expect(result).toContain('log-tasks.ts create 7 <path-to-json>');
+      expect(result).toContain('log-tasks.ts list 7');
+
+      for (const title of ['2. Milestone: Sign in', 'Create initial tasks']) {
+        expect(buildContextPrompt(testProjectId, 7, { taskLoggingFor: { title } })).not.toContain(
+          '## Logging New Tasks',
+        );
+      }
+    });
+
     it("tells agents never to stop Bottega and to use their own port instead", () => {
       const result = buildContextPrompt(testProjectId, 1);
       const port = Number(process.env.PORT || 7531);

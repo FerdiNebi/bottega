@@ -103,6 +103,8 @@ function task(id: number, overrides: Partial<TaskRow> = {}): TaskRow {
     refinement_complete: 0,
     learnings_complete: 0,
     yolo_mode: 0,
+    autopilot_can_start: 1,
+    autopilot_can_work: 1,
     usage_limit_resume_at: null,
     usage_limit_agent_type: null,
     completed_at: null,
@@ -324,7 +326,29 @@ describe('startNextAutopilotTask', () => {
     state.docs[2] = '## Depends on\n- (task #1)';
     const result = await startNextAutopilotTask(1, ctx);
     expect(result.status).toBe('idle');
-    expect(state.project.autopilot_message).toMatch(/task #1 "Task 1" blocked; 1 task\(s\) waiting/);
+    expect(state.project.autopilot_message).toMatch(/task #1 "Task 1" blocked; 1 task\(s\) wait on dependencies/);
+  });
+
+  it('never starts a held or manual task, and says it is waiting for you', async () => {
+    state.tasks = [
+      task(1, { autopilot_can_start: 0 }),
+      task(2, { autopilot_can_work: 0 }),
+      task(3, { status: 'in_progress', autopilot_can_work: 0 }),
+    ];
+    state.runs = [run(3)];
+    const result = await startNextAutopilotTask(1, ctx);
+    expect(result.status).toBe('idle');
+    expect(startAgentRun).not.toHaveBeenCalled();
+    expect(state.project.autopilot_message).toBe(
+      'Stopped: waiting for you to start task #1 "Task 1"; task #2 "Task 2", task #3 "Task 3" manual.',
+    );
+  });
+
+  it('resumes an in-progress task whose manual start was turned off after it started', async () => {
+    state.tasks = [task(1, { status: 'in_progress', autopilot_can_start: 0 })];
+    state.runs = [run(1)];
+    const result = await startNextAutopilotTask(1, ctx);
+    expect(result).toEqual(expect.objectContaining({ status: 'started', taskId: 1 }));
   });
 
   it('starts the verification session at a milestone and stops instead of running an agent', async () => {
@@ -385,6 +409,18 @@ describe('finishing a task (onAutopilotRunCompleted after PR / yolo)', () => {
       ciStatus: { status: 'passed', checks: [] },
       ...overrides,
     } as never);
+
+  it('leaves a manual task to the human: no merge, no next task', async () => {
+    state.tasks = [task(1, { status: 'in_progress', pr_agent_complete: 1, autopilot_can_work: 0 }), task(2)];
+    state.runs = [run(1, { agent_type: 'pr' })];
+    openPr();
+
+    expect(await onAutopilotRunCompleted(1, 'pr', ctx)).toBe(false);
+    expect(await finishIfPrCompletedOutsideRun(1, ctx)).toBe(false);
+
+    expect(mergeAndCleanup).not.toHaveBeenCalled();
+    expect(state.tasks[0]!.status).toBe('in_progress');
+  });
 
   it('merges a green, mergeable PR, completes the task and starts the next', async () => {
     state.tasks = [task(1, { status: 'in_progress', pr_agent_complete: 1 }), task(2)];
@@ -611,6 +647,8 @@ describe('getAutopilotStatus', () => {
       readyCount: 1,
       waitingCount: 1,
       blockedCount: 0,
+      heldCount: 0,
+      manualCount: 0,
       message: 'Merged task #1',
     });
   });

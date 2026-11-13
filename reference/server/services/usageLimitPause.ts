@@ -8,7 +8,7 @@
 // startConversation, which imports this module.
 
 import { agentRunsDb, projectsDb, tasksDb } from '../database/db.js';
-import { isAutopilotProject } from './autopilotFlag.js';
+import { isAutopilotTask } from './autopilotFlag.js';
 import type { UsageLimitHit } from './conversation/runStreamingLoop.js';
 import type {
   BroadcastFn,
@@ -95,7 +95,7 @@ export function pauseRunForUsageLimit(ctx: PauseContext, hit: UsageLimitHit): bo
   });
 
   const task = tasksDb.getById(taskId);
-  if (task && isAutopilotProject(task.project_id)) {
+  if (task && isAutopilotTask(task)) {
     setAutopilotMessage(task.project_id, `Paused: task #${taskId} hit the usage limit; resumes at ${formatTime(resumeAt)}.`);
   }
 
@@ -169,7 +169,7 @@ export async function resumeTask(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[UsageLimit] Failed to resume task ${taskId}:`, err);
-    if (isAutopilotProject(task.project_id)) {
+    if (task && isAutopilotTask(task)) {
       setAutopilotMessage(task.project_id, `Stopped: task #${taskId}: could not resume ${agentType} after the usage limit: ${message}`);
     }
   }

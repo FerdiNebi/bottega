@@ -39,15 +39,54 @@ The flag is read **at every decision point**, not once at Start. So:
   the normal pipeline rules apply again (plan gate, no auto-merge, no next
   task). It is the "stop after this step" switch.
 
+## Per-task switches
+
+Each task has two more switches, both on by default, so a project behaves as
+above until someone turns one off:
+
+- **`tasks.autopilot_can_start`** — "Autopilot may start this task". Off: the
+  task waits in Pending until a human presses Run (or Start verification, for
+  a milestone). Autopilot never moves it to In progress. Once it runs, it runs
+  under autopilot like any other task (no questions, auto-chaining, merge, then
+  the next task), unless the second switch is off too.
+- **`tasks.autopilot_can_work`** — "Autopilot may work on this task". Off: the
+  task is **manual**. Autopilot never starts or resumes it, its runs follow
+  the normal pipeline rules (questions asked, plan gate, no auto-merge, no
+  next task), and finishing it does not start the next task. The first switch
+  has no effect while this one is off.
+
+A task's **effective autopilot** is the project's flag **and**
+`autopilot_can_work`. Every place this spec says "while the project's
+autopilot is enabled" for a task — the prompt addendum and question ban, the
+completion-handler rules, finishing, the usage-limit pause message — reads the
+effective value. Like the project flag, both switches are read at every
+decision point and can be changed at any time, including while the task is in
+progress: turning `autopilot_can_work` off during a run lets the current agent
+finish its turn under the old rules and then hands the task back to the human
+(autopilot records `Task #N switched to manual; autopilot stops after its
+current step.`); turning it on again changes nothing until the next run or
+Start.
+
+They are set when a task is created (the New Task form, the task-logging
+script in [`task-logging.md`](./task-logging.md)) and changed from Task
+Detail. `POST /api/projects/:projectId/tasks` and `PUT /api/tasks/:id` accept
+`autopilot_can_start` and `autopilot_can_work` as booleans. The board marks a
+task with `autopilot_can_work` off as **Manual**, and a pending task with
+`autopilot_can_start` off as **Manual start**.
+
 ## Choosing the next task
 
-A task is a **candidate** when it is
+A task is a **candidate** when `autopilot_can_work` is on and it is
 
-- `pending`; or
+- `pending` with `autopilot_can_start` on; or
 - `in_progress`, has at least one agent run, is not `workflow_blocked`, and has
   no running agent. This lets Start pick up a task that was interrupted (a Stop,
   a server restart). The project-bootstrap sessions are `in_progress` tasks with
   conversations but no agent runs, so they are never picked.
+
+A pending task with `autopilot_can_start` off is **held**, and a task with
+`autopilot_can_work` off is **manual**; neither is a candidate. Tasks that
+depend on one wait until a human completes it.
 
 A candidate is **ready** when every task it depends on is `completed`.
 Dependencies are the `(task #N)` references in the task doc's `## Depends on`
@@ -130,7 +169,8 @@ connected), autopilot stops with that reason like any other start failure.
 
 ## What changes inside a run
 
-Every agent run of a task whose project has autopilot enabled gets:
+Every agent run of a task whose effective autopilot is on (see
+[Per-task switches](#per-task-switches)) gets:
 
 - **No questions.** The ask-the-user tool (`AskUserQuestion`) is disallowed for
   the run, and an autopilot section is appended to the agent's message: nobody
@@ -157,8 +197,8 @@ The prompt text lives in
 ## Chaining under autopilot
 
 The completion handler ([`core/orchestration-loop.md`](../core/orchestration-loop.md))
-keeps every core rule and adds these, all only while the project's autopilot is
-enabled:
+keeps every core rule and adds these, all only while the task's effective
+autopilot is on:
 
 - **After planning:** if `planification_complete` is set, chain to
   implementation (the plan gate is skipped, as for non-technical users in
@@ -224,7 +264,9 @@ push notification still fires. The reasons:
 - an agent couldn't start (for example, missing provider credentials);
 - a milestone was reached, or is still waiting for manual verification;
 - no candidate is ready: `pending` tasks remain, but they all wait on a task that
-  isn't completed (typically a blocked one);
+  isn't completed (typically a blocked one), or are held for a manual start or
+  manual (the message names them: "waiting for you to start task #N");
+- a task's `autopilot_can_work` was turned off while it ran;
 - done: every task is completed.
 
 To continue, fix the cause (resume the blocked task, merge or fix the PR), then
@@ -248,6 +290,8 @@ interrupted task up again because it is an `in_progress` candidate.
   readyCount: number;     // ready candidates
   waitingCount: number;   // pending tasks with unresolved dependencies
   blockedCount: number;   // in_progress tasks with workflow_blocked
+  heldCount: number;      // pending tasks with autopilot_can_start off
+  manualCount: number;    // unfinished tasks with autopilot_can_work off
   message: string | null; // projects.autopilot_message
 }
 ```
@@ -274,6 +318,10 @@ few seconds while autopilot is enabled.
 - [ ] Finishing: PR merge gate, local merge, mark completed, next task, the
       single-flight lock.
 - [ ] Board UI: checkbox, Start, status line.
+- [ ] Per-task switches: `tasks.autopilot_can_start` / `autopilot_can_work`
+      (default 1), accepted on task create/update, held and manual tasks left
+      out of the candidates, the effective flag at every task decision point,
+      checkboxes on the New Task form and Task Detail, board badges.
 - [ ] Milestones: milestone tasks first among ready `pending` tasks; start the
       verification session and stop; the "waiting for manual verification"
       message.
@@ -283,6 +331,8 @@ few seconds while autopilot is enabled.
 | Concern | File |
 |---|---|
 | Selection, start, finish, stop | `reference/server/services/autopilot.ts` |
+| Effective per-task flag | `reference/server/services/autopilotFlag.ts` (`isAutopilotTask`) |
+| Per-task checkboxes | `reference/src/components/TaskAutopilotOptions.tsx` |
 | Routes | `reference/server/routes/projects.ts` (`/projects/:id/autopilot*`) |
 | Prompt addendum + tool ban | `reference/server/services/agentRunner.ts`, `reference/server/constants/prompts/autopilot.md` |
 | Chaining hooks | `reference/server/services/conversation/agentRunLifecycle.ts` |
