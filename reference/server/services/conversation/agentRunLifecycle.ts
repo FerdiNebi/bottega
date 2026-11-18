@@ -18,6 +18,7 @@ import { isAutopilotTask } from '../autopilotFlag.js';
 import { notifyClaudeComplete } from '../notifications.js';
 import { readTaskDoc } from '../documentation.js';
 import { phaseToContinue } from '../taskPhases.js';
+import { reviewLeftNoVerdict } from '../reviewVerdict.js';
 import type { StreamingContext } from './types.js';
 import type { AgentRunRow } from '../../database/db.js';
 import type { AgentType } from '@shared/websocket/messages';
@@ -284,6 +285,19 @@ async function handleAgentChaining(
   if (task?.workflow_blocked) {
     console.log(`[ConversationAdapter] Task ${taskId} workflow blocked, stopping loop`);
     autopilot.onAutopilotLoopStopped(taskId, 'blocked by the review agent; see Review Findings in the task doc.');
+    return;
+  }
+
+  // A review that wrote nothing gave no verdict. Implementation would find no
+  // work and start another review of the same commit, so stop instead.
+  if (agentType === 'review' && task && finishedRun && reviewLeftNoVerdict(finishedRun.id, task.project_id, taskId)) {
+    console.log(`[ConversationAdapter] Task ${taskId} review ended without a verdict, auto-blocking`);
+    tasksDb.blockWorkflow(taskId);
+    autopilot.onAutopilotLoopStopped(
+      taskId,
+      'the review ended without a verdict (it did not update the task doc) and was blocked. Check the review conversation, then resume the task.',
+    );
+    broadcastToTaskSubscribersFn?.(taskId, { type: 'task-blocked', reason: 'review_no_verdict' });
     return;
   }
 

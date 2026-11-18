@@ -99,6 +99,14 @@ does this:
      the finish pipeline → start the **PR** agent. (The refinement and learnings
      extras insert themselves here, in that order, *before* PR.)
    - **If `workflow_blocked` is set:** STOP. A human must resume.
+   - **If a review run left the task doc untouched:** it gave no verdict. It
+     ended its turn early, for example waiting on a background command that
+     never resumes it. Auto-block the task and STOP (broadcast `task-blocked`,
+     reason `review_no_verdict`) instead of chaining to implementation, which
+     would find nothing to do and hand the same commit to another review. The
+     check compares the doc's modification time with the one recorded when the
+     review started. It is a fact about a file, not a reading of the agent's
+     prose.
    - **If `workflow_run_count` ≥ the cap:** auto-block the task and STOP
      (broadcast `task-blocked`, reason `max_iterations`).
    - **Otherwise alternate the loop:** implementation → review, review →

@@ -39,6 +39,7 @@ import {
 } from '../constants/agentPrompts.js';
 import { loadAgentModelSettings } from './agentModelSettings.js';
 import { buildTaskRunDigest } from './taskRunDigest.js';
+import { recordReviewStart } from './reviewVerdict.js';
 import { renderPrompt, toPromptPath } from './promptRenderer.js';
 import type { AgentRunRow, CreatedConversation } from '../database/db.js';
 import type {
@@ -273,6 +274,10 @@ export async function startAgentRun(
     agentRunsDb.setPhase(agentRun.id, phase.number, phase.count);
     agentRun.phase = phase.number;
     agentRun.phase_count = phase.count;
+  }
+  // Lets the loop tell a review that gave no verdict (core/orchestration-loop.md).
+  if (agentType === 'review') {
+    recordReviewStart(agentRun.id, taskWithProject.project_id, taskId);
   }
   console.log(
     `[AgentRunner] Created agent run ${agentRun.id} (${agentType}) for task ${taskId} (provider=${provider})`,

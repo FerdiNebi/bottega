@@ -81,7 +81,7 @@ The **full suite** is every slow suite the project has: the unit/integration sui
 **First review:**
 1. Run targeted tests only for code you suspect is under-tested, or for checks missing from the Verification Log (check CLAUDE.md for the test command)
 2. Run the **full suite once**, each command in the foreground with the Bash tool's `timeout: 600000` (full suites can take 5-10 minutes). Send each command's full output to a file and read the result from the file: `<command> > /tmp/suite-{{taskId}}-1.log 2>&1; echo EXIT=$?`, then grep the file for the summary and failures (or `tail -60` it). Do NOT pipe the command itself through `tail` or `head`: when a coverage report or other output follows the summary, the summary is cut off and the whole suite has to run again
-3. Do NOT use `run_in_background`: nothing wakes you when a background command finishes, and ending your turn ends this review. If the suite times out after 10 minutes, run it in parts (for example one test directory per call), each in the foreground
+3. Do NOT use `run_in_background`, the Monitor tool, scheduled wake-ups or `sleep`/`until` loops: nothing wakes you when they finish, and ending your turn ends this review. If the suite times out after 10 minutes, run it in parts (for example one test directory per call), each in the foreground
 4. Do NOT re-run the full suite in the same review unless that run was broken by the environment (not by a test failure). Do NOT start parallel test runs, they compete for resources
 
 **Re-review:**
@@ -89,6 +89,12 @@ The **full suite** is every slow suite the project has: the unit/integration sui
 2. Re-run the full suite only if it failed in the previous review, or the diff touches code with wide reach: dependencies or lockfiles, build/test config, DB schema or migrations, or shared modules imported across the project. Otherwise carry over the previous `**Full suite:**` result
 
 - Report any failures or issues found
+
+**A failure the diff can't explain** is a test in code this branch doesn't touch, or one that depends on the time of day, the date or an outside service. Handle it now:
+1. Re-run just that test once, right away, in the foreground. If it passes, note it as flaky under Unit Tests and carry on.
+2. If it fails again, it still counts: the suite must pass at the commit you mark READY. Find the cause as far as you can without fixing it. Then give **NEEDS_WORK**, and under Issues to Address name the test, the cause, and that it is unrelated to this task, so implementation makes the smallest fix. No To-Do item needs unchecking for it.
+3. On a re-review where that same unrelated test still fails, give **BLOCKED** and explain it, so a human decides.
+4. Never wait for the clock, the date or anything outside to change so that the test passes.
 
 ### 4. Manual Testing with Playwright MCP
 Follow the manual testing scenarios from the Testing Strategy section.
@@ -215,6 +221,7 @@ This stops the automated agent loop until the user resumes it after providing th
 - Do NOT implement anything - only review and test
 - You are only allowed to restart processes such as web servers when necessary, especially for playwright tests.
 - **ALWAYS REPLACE (never append to) the Review Findings section**
+- **Give your verdict before your turn ends.** This review ends when your turn ends, and nothing resumes you afterwards. Before you stop, rewrite Review Findings and, for READY or BLOCKED, run the script. Never end your turn waiting on a background command, a timer or a wake-up. If the task doc is untouched when the review ends, Bottega blocks the task for a human instead of continuing the loop.
 - Mark items as unchecked if they need rework
 
 Start reviewing now.

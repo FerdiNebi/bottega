@@ -50,6 +50,11 @@ vi.mock('../autopilot.js', () => ({
   finishAutopilotTask: vi.fn().mockResolvedValue(undefined)
 }));
 
+vi.mock('../reviewVerdict.js', () => ({
+  reviewLeftNoVerdict: vi.fn().mockReturnValue(false)
+}));
+
+import { reviewLeftNoVerdict } from '../reviewVerdict.js';
 import {
   buildAgentRunCompletionHandler,
   MAX_WORKFLOW_RUNS
@@ -334,6 +339,41 @@ describe('buildAgentRunCompletionHandler', () => {
     await vi.advanceTimersByTimeAsync(1000);
 
     expect(startAgentRun).toHaveBeenCalledWith(7, 'implementation', expect.any(Object));
+  });
+
+  it('blocks instead of chaining when the review left no verdict', async () => {
+    const c = ctx();
+    vi.mocked(agentRunsDb.getByTask).mockReturnValue([
+      { id: 9, conversation_id: 100, agent_type: 'review', status: 'running' }
+    ] as never);
+    vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, project_id: 4, workflow_run_count: 2 } as never);
+    vi.mocked(reviewLeftNoVerdict).mockReturnValueOnce(true);
+
+    await buildAgentRunCompletionHandler(c)();
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(reviewLeftNoVerdict).toHaveBeenCalledWith(9, 4, 7);
+    expect(tasksDb.blockWorkflow).toHaveBeenCalledWith(7);
+    expect(c.broadcastToTaskSubscribersFn).toHaveBeenCalledWith(7, {
+      type: 'task-blocked',
+      reason: 'review_no_verdict'
+    });
+    expect(onAutopilotLoopStopped).toHaveBeenCalledWith(7, expect.stringContaining('without a verdict'));
+    expect(startAgentRun).not.toHaveBeenCalled();
+  });
+
+  it('does not check for a verdict after an implementation run', async () => {
+    const c = ctx();
+    vi.mocked(agentRunsDb.getByTask).mockReturnValue([
+      { id: 9, conversation_id: 100, agent_type: 'implementation', status: 'running' }
+    ] as never);
+    vi.mocked(tasksDb.getById).mockReturnValue({ id: 7, project_id: 4, workflow_run_count: 2 } as never);
+
+    await buildAgentRunCompletionHandler(c)();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(reviewLeftNoVerdict).not.toHaveBeenCalled();
+    expect(startAgentRun).toHaveBeenCalledWith(7, 'review', expect.any(Object));
   });
 
   it('starts refinement when workflow_complete and refinement not yet complete', async () => {

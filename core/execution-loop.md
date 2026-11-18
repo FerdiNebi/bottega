@@ -142,6 +142,15 @@ reviewer's job is to catch that.
   rest carry over as passed at the earlier commit. The full suite is re-run
   only if it failed last time or the diff touches code with wide reach
   (dependencies, build/test config, schema/migrations, shared modules).
+- **A failure the diff can't explain** (a test in code the branch doesn't
+  touch, or one that depends on the clock, the date or an outside service) is
+  re-run once, right away. If it passes on the re-run, it is recorded as flaky
+  and the review carries on. If it fails again, it still counts, because the
+  suite must pass at the commit marked READY. The verdict is NEEDS_WORK, naming
+  the test and the cause found and noting that it is unrelated to the task, so
+  implementation makes the smallest fix. If a re-review finds that same test
+  still failing, the verdict is BLOCKED and a human decides. The reviewer never
+  waits for the time or anything outside to change so that a test passes.
 - Every review records the **commit it reviewed** and **where the full suite
   last passed** in Review Findings, so the next re-review knows its baseline.
 - **Verdict** — exactly one of:
@@ -155,6 +164,11 @@ reviewer's job is to catch that.
   - **BLOCKED** — all agent-doable work is done but remaining items physically
     require a human (a decision, external infra, credentials) → run the script
     that sets `workflow_blocked`. The loop stops until a human resumes.
+- **The verdict comes before the turn ends.** An agent run ends with its turn,
+  and nothing wakes it for a background command, a timer or a scheduled
+  wake-up. A review that ends its turn waiting on one of those leaves no
+  verdict, and the loop blocks the task (see below) instead of sending it to
+  implementation.
 - Review **only documents and decides — it never fixes code.** (If the
   implementation left changes uncommitted, the reviewer commits them as they are
   so the review has a fixed commit; that is bookkeeping, not a fix.)
@@ -201,10 +215,15 @@ that the loop checks **before** that toggle —
 
 - `workflow_complete` set (review said READY) → finish pipeline → PR;
 - `workflow_blocked` set (review said BLOCKED) → stop;
+- a review that left the task doc untouched (no verdict at all) → block and
+  stop;
 - and the iteration cap auto-blocks a runaway loop.
 
-So a NEEDS_WORK review (which sets no flag) simply falls through to the toggle
-and bounces back to implementation. After an implementation run that finished
+So a NEEDS_WORK review (which sets no flag but rewrites Review Findings) falls
+through to the toggle and bounces back to implementation. A review that wrote
+nothing gave no verdict. Sending it to implementation would find no work and
+start another review of the same commit, again and again until the iteration
+cap. After an implementation run that finished
 its phase while later phases remain, the toggle starts the next phase's
 implementation run instead of review.
 
